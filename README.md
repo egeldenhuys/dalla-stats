@@ -1,4 +1,4 @@
-# Dalla Stats
+# Dalla Stats ![](https://img.shields.io/github/release/egeldenhuys/dalla-stats.svg)
 
 Scrape traffic statistics from TP-LINK AC750 Archer C20 Router
 
