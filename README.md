@@ -50,3 +50,12 @@ optional arguments:
 - [ ] Produce a human readable summary
 - [ ] Handle invalid router responses (invalid password, etc)
 - [ ] Better logging to stdout
+
+## Example graphs
+Some graphs produced using [LiveGraph](http://www.live-graph.org/)
+
+Total Data Usage:
+![total](example_graphs/total.png)
+
+Delta:
+![delta](example_graphs/delta.png)
