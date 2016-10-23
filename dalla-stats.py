@@ -1,304 +1,177 @@
+"""
+Process:
+
+Load all device csv logs from directory
+-> array of dicts containing last line from csv [OLD]
+    Time, Total Bytes, Delta, On-Peak, Off-Peak
+
+Get new device stats from router
+-> dict array [NEW]
+    Time, Total Bytes
+
+Calculate Delta given old and new device stats
+-> New stats get new keys
+    Delta, On-Peak, Off-Peak
+
+Append new stats to log file
+-> write new stats to their corresponding csv
+
+Get user stats from device stats array
+Add up all fields from corresponding devices for each user
+-> Dict array of users
+    Time, Total Bytes, Delta, On-Peak, Off-Peak
+
+Append user stats to log files
+-> write new stats to their corresponding csv
+
+Get commune stats
+-> Add up all user fields
+return dict
+
+Log commune stats
+-> append dict to commune log files
+
+oldStats = newStats
+wait some time, then repeat
+
+"""
+import argparse
 import requests
 import base64
-import StringIO
 import time
 import os
 import numpy as np
 from os import listdir
 from os.path import isfile, join
 
-"""
-Get device stats -> csv
-    CSV:
-        Time, Total Byes, Deleta Bytes, On-Peak, Off-Peak
-
-Take each user,
-    For each MAC in user
-    User += Mac stats
-    -> csv
-
-Take each user
-commune += user
-    -> csv
-
-"""
-
-"""
-Get Raw Statistics
-Parse Device Statistics
-    - Open each csv, get last entry, calculate delta, peak, and off-peak, append
-Load User map
-Parse user Statistics
-    - Open each csv, get last entry, calculate delta, peak, and off-peak, append
-Parse commune statistics
-    - Open csv, get last entry, calculate delta, peak, and off-peak, append
-
-"""
-
 def main():
-    interval = 1
-    username = 'admin'
-    password = 'admin'
-    deviceLogPath = 'devices/'
-    userLogPath = 'users/'
-    communeLogFile = 'commune.csv'
-    userMapPath = 'user-map.csv'
+    parser = argparse.ArgumentParser()
+    parser.add_argument("-u", "--username", help="the router admin username")
+    parser.add_argument("-p", "--password", help="the router admin password")
+    parser.add_argument("-i", "--interval", type=int, help="the interval in seconds to update the statistics")
+    parser.add_argument("-d", "--device-log-dir", help="the folder to store device log files")
+    parser.add_argument("-e", "--user-log-dir", help="the folder to store user log files")
+    parser.add_argument("-c", "--commune-log-file", help="the path of the commune log file")
+    parser.add_argument("-m", "--user-map-file", help="the path of the user map .csv")
+    args = parser.parse_args()
 
-    oldDeviceStats = []
+    oldDeviceStats = loadDeviceStats(args.device_log_dir)
     userStats = []
 
-    userMap = loadUserMap(userMapPath)
-    oldDeviceStats = loadDeviceStats(deviceLogPath)
-
-    while (True):
-        timeKey = int(time.time())
-
-        session = requests.session()
-        initSession(username, password, session)
-
-        deviceStats = getDeviceStats(session)
-        deviceStats = updateDeviceStats(oldDeviceStats, deviceStats, deviceLogPath, timeKey)
-
-        #print deviceStats
-
-        #print oldDeviceStats
-
-        userStats = getUserStatsRAM(deviceStats, userMap, timeKey)
-        #userStats = getUserStats(deviceLogPath, userLogPath, userMapPath, timeKey)
-        logUserStats(userLogPath, userStats)
-
-        communeStats = getCommuneStats(userStats, communeLogFile, timeKey)
-        logCommuneStats(communeLogFile, communeStats)
-
-        oldDeviceStats = deviceStats
-
-        time.sleep(interval)
-
-def generateStats(username, password, deviceLogPath, userLogPath, communeLogFile, userMapPath):
-    timeKey = int(time.time())
+    userMap = loadUserMap(args.user_map_file)
 
     session = requests.session()
-    initSession(username, password, session)
+    initSession(args.username, args.password, session)
 
-    deviceStats = getDeviceStats(session)
+    while (True):
+        print('Get stats...')
 
-    logDeviceStats(deviceLogPath, deviceStats, timeKey)
+        timeKey = int(time.time())
 
-    userStats = getUserStatsRAM(deviceLogPath, userLogPath, userMapPath, timeKey)
-    logUserStats(userLogPath, userStats)
+        deviceStats = getDeviceStats(session, timeKey)
 
-    communeStats = getCommuneStats(userLogPath, communeLogFile, timeKey)
-    logCommuneStats(communeLogFile, communeStats)
+        if (len(oldDeviceStats) == 0):
+            oldDeviceStats = deviceStats
 
-    print communeStats
+        if (len(oldDeviceStats) > len(deviceStats)):
+            print('Old device count > new device count!')
+            # Need to merge old and new
+            
+        deviceStats = updateDeviceStats(oldDeviceStats, deviceStats, timeKey, args.device_log_dir)
+        logDeviceStats(args.device_log_dir, deviceStats)
 
-def loadDeviceStats(deviceLogPath):
+        userStats = getUserStats(deviceStats, userMap, timeKey)
+        logUserStats(args.user_log_dir, userStats)
+
+        communeStats = getCommuneStats(userStats, args.commune_log_file, timeKey)
+        logCommuneStats(args.commune_log_file, communeStats)
+
+        oldDeviceStats = deviceStats
+        time.sleep(args.interval)
+
+def loadDevice(deviceLogDir, macAddress, ipAddress):
+
+    """ Open each csv file in the log dir
+    and load the last line into the device dict array
     """
-    Go through the device logs, and add up the last row
+
+    try:
+        os.mkdir(deviceLogDir)
+    except OSError:
+        i = 5
+
+    # Generate file name
+    mac = macAddress.replace(':', '-')
+    ip = ipAddress
+    fileName = str(deviceLogDir + mac + '_' + ip + '.csv')
+
+    if (os.path.isfile(fileName) == False):
+        none = {}
+        return none
+
+    # load device csv
+    csv = np.genfromtxt(fileName, delimiter=',', dtype=long)
+
+    # populate device dict
+    tmpDevice = {}
+    tmpDevice['Time'] = csv[-1][0]
+    tmpDevice['MAC Address'] = mac
+    tmpDevice['IP Address'] = ip
+    tmpDevice['Total Bytes'] = csv[-1][1]
+    tmpDevice['Delta'] = csv[-1][2]
+    tmpDevice['On-Peak'] = csv[-1][3]
+    tmpDevice['Off-Peak'] = csv[-1][4]
+
+    return tmpDevice
+
+def loadDeviceStats(deviceLogDir):
+    """ Open each csv file in the log dir
+    and load the last line into the device dict array
     """
 
     deviceStatsArray = []
 
     try:
-        os.mkdir(deviceLogPath)
+        os.mkdir(deviceLogDir)
     except OSError:
         i = 5
 
-    onlyfiles = [f for f in listdir(deviceLogPath) if isfile(join(deviceLogPath, f))]
+    onlyfiles = [f for f in listdir(deviceLogDir) if isfile(join(deviceLogDir, f))]
 
     for devicecsv in onlyfiles:
-        # get log file info
-
+        # Extract info from log files
         mac = getMacFromFileName(devicecsv)
         ip = getIpFromFileName(devicecsv)
 
-        #print('MAC = ' + mac)
+        # load device csv
+        csv = np.genfromtxt(deviceLogDir + devicecsv, delimiter=',', dtype=long)
 
-        # load csv
-        csv = np.genfromtxt(deviceLogPath + devicecsv, delimiter=',', dtype=long)
-
+        # populate device dict
         tmpDevice = {}
         tmpDevice['Time'] = csv[-1][0]
-        tmpDevice['macAddress'] = mac
-        tmpDevice['ipAddress'] = ip
-        tmpDevice['totalBytes'] = csv[-1][1]
-        tmpDevice['Delta Bytes'] = csv[-1][2]
+        tmpDevice['MAC Address'] = mac
+        tmpDevice['IP Address'] = ip
+        tmpDevice['Total Bytes'] = csv[-1][1]
+        tmpDevice['Delta'] = csv[-1][2]
         tmpDevice['On-Peak'] = csv[-1][3]
         tmpDevice['Off-Peak'] = csv[-1][4]
+
+        # add device dict to array
         deviceStatsArray.append(tmpDevice)
 
     return deviceStatsArray
 
-def getUserStatsRAM(deviceStats, userMap, timeKey):
-    """
-    Go through the device logs, and add up the last row
-    """
-    userStatsArray = []
-
-    unknownUser = {}
-    unknownUser['Name'] = 'Unknown'
-    unknownUser['Time'] = timeKey
-    unknownUser['Total Bytes'] = 0
-    unknownUser['Delta Bytes'] = 0
-    unknownUser['On-Peak'] = 0
-    unknownUser['Off-Peak'] = 0
-
-    userStatsArray.append(unknownUser)
-
-    # Open device lig files that belong to each user
-
-    for deviceDict in deviceStats:
-        # get log file info
-
-        mac = deviceDict['macAddress']
-        ip = deviceDict['ipAddress']
-
-        #print('MAC = ' + mac
-
-        if (deviceDict['Time'] != timeKey):
-            print('Time key mismatch!')
-
-        # does this MAC belong to a user?
-        # yes, add the device values to the user dict
-        if (userMap.has_key(mac)):
-            # print(mac + ' belongs to ' + userMap[mac])
-
-            # See if this user exists in the userStatsArray, if so, append, else create new user
-            found = False
-            for user in userStatsArray:
-                if (user['Name'] == userMap[mac]):
-                    found = True
-                    user['Total Bytes'] += deviceDict['totalBytes']
-                    user['Delta Bytes'] += deviceDict['Delta Bytes']
-                    user['On-Peak'] += deviceDict['On-Peak']
-                    user['Off-Peak'] += deviceDict['Off-Peak']
-
-            if (found == False):
-                tmpUser = {}
-                tmpUser['Name'] = userMap[mac]
-                tmpUser['Time'] = timeKey
-                tmpUser['Total Bytes'] = deviceDict['totalBytes']
-                tmpUser['Delta Bytes'] = deviceDict['Delta Bytes']
-                tmpUser['On-Peak'] = deviceDict['On-Peak']
-                tmpUser['Off-Peak'] = deviceDict['Off-Peak']
-                userStatsArray.append(tmpUser)
-        else:
-            # print(mac + ' not found in userMap!')
-            # Mac does not belong to user, add to the unknown user at index 0
-            userStatsArray[0]['Total Bytes'] += deviceDict['totalBytes']
-            userStatsArray[0]['Delta Bytes'] += deviceDict['Delta Bytes']
-            userStatsArray[0]['On-Peak'] += deviceDict['On-Peak']
-            userStatsArray[0]['Off-Peak'] += deviceDict['Off-Peak']
-
-    return userStatsArray
-
-def updateDeviceStats(prevStats, newStats, deviceLogPath, timeKey):
-    #print 'Updating device stats...'
-
-    """
-    Calculate delta, peak, and off-peak, then also writes to the log files?
+def getDeviceStats(session, timeKey):
+    """Given a valid session, scrape the device stats from the router
     """
 
-    """
-    FORMAT:
-
-    filename: M-A-C_I.P
-
-    Time, Total Bytes, Delta Bytes, On-Peak, Off-Peak
-
-    """
-
-    try:
-        os.mkdir(deviceLogPath)
-    except OSError:
-        i = 5
-
-    for newDeviceDict in newStats:
-        # file name
-        newDeviceDict['Time'] = timeKey
-
-        mac = newDeviceDict['macAddress'].replace(':', '-')
-        ip = newDeviceDict['ipAddress']
-        fileName = str(deviceLogPath + mac + '_' + ip + '.csv')
-
-        # csv fields
-        totalBytes = newDeviceDict['totalBytes']
-
-        # new device, set up csv for it
-        if (os.path.isfile(fileName) == False):
-            print 'New device: ' + mac + '_' + ip
-
-            # TODO: P and O times
-            # add new keys
-            newDeviceDict['Delta Bytes'] = 0
-            newDeviceDict['On-Peak'] = totalBytes
-            newDeviceDict['Off-Peak'] = 0
-
-            output = open(fileName, 'a')
-            output.write('Time, Total Bytes, Delta Bytes, On-Peak, Off-Peak\n')
-
-            output.write('{0}, {1}, {2}, {3}, {4}\n'.format(timeKey, totalBytes, newDeviceDict['Delta Bytes'], newDeviceDict['On-Peak'], newDeviceDict['Off-Peak']))
-            output.close()
-        else:
-            # search for matching device dict in prev dict
-            found = False
-
-            for oldDeviceDict in prevStats:
-                # look for match
-                if (oldDeviceDict['macAddress'] == newDeviceDict['macAddress']):
-                    if (oldDeviceDict['ipAddress'] == newDeviceDict['ipAddress']):
-                        #print mac + "_" + ip + ':'
-
-                        found = True
-                        newDeviceDict['Delta Bytes'] = totalBytes - oldDeviceDict['totalBytes']
-
-                        #print('Delta = {0} - {1} = {2}'.format(totalBytes, oldDeviceDict['totalBytes'], newDeviceDict['Delta']))
-
-                        if (newDeviceDict['Delta Bytes'] < 0):
-                            newDeviceDict['Delta Bytes'] = totalBytes
-                            print 'Negative delta!'
-
-                        # TODO: if time, peak | O
-                        if (oldDeviceDict.has_key("On-Peak")):
-
-                            newDeviceDict['On-Peak'] = newDeviceDict['Delta Bytes'] + oldDeviceDict['On-Peak']
-                            #print('On-Peak = {0} + {1} = {2}'.format(totalBytes, newDeviceDict['Delta'], newDeviceDict['On-Peak']))
-                        else:
-                            # Missing data, resort to csv
-                            #print ('old Dict has not yet been converted, loading from csv')
-                            csv = np.genfromtxt(fileName, delimiter=",", dtype=long)
-                            newDeviceDict['On-Peak'] = newDeviceDict['Delta Bytes'] + csv[-1][3]
-                            #print('On-Peak = {0} + {1} = {2}'.format(newDeviceDict['Delta'], csv[-1][3], newDeviceDict['On-Peak']))
-
-                        newDeviceDict['Off-Peak'] = 0
-
-                        output = open(fileName, 'a')
-                        output.write('{0}, {1}, {2}, {3}, {4}\n'.format(timeKey, totalBytes, newDeviceDict['Delta Bytes'], newDeviceDict['On-Peak'], newDeviceDict['Off-Peak']))
-                        output.close()
-
-            if (found == False):
-                print('Device dict mismatch!')
-
-    updatedDeviceStats = newStats
-    return updatedDeviceStats
-
-
-
-def getDeviceStats(session):
-
+    # Configure page specific headers
     url = 'http://192.168.1.1/cgi?1&5'
-
     session.headers.update({'Referer': 'http://192.168.1.1/mainFrame.htm'})
     data ='[STAT_CFG#0,0,0,0,0,0#0,0,0,0,0,0]0,0\r\n[STAT_ENTRY#0,0,0,0,0,0#0,0,0,0,0,0]1,0\r\n'
 
     r = session.post(url=url, data=data)
-
     rawStats = r.text
-    """
-    macAddress
-    ipAddress
-    totalBytes
-    """
 
     dictArray = []
     tmpDict = {}
@@ -318,37 +191,124 @@ def getDeviceStats(session):
 
         arr[i] = arr[i].strip()
 
-        #print arr[i]
-
+        # start of a new header
         if (arr[i][0] == '['):
-            #print 'Adding tmpDict to dictArray'
+
             dictArray.append(tmpDict)
             tmpDict = {}
-
-            #print 'Start Collecting...'
-            next
+            next # skip the header
 
         tmp = arr[i].split('=')
 
+        # Add key=value
         if (len(tmp) == 2):
-            #print 'Adding ' + tmp[0] + '=' + tmp[1] + ' to tmpDict'
             tmpDict[tmp[0]] = tmp[1]
 
-    cleaned = cleanStatsDictArray(dictArray)
-    fixed = fixIpsInDictArray(cleaned)
-    squash = squashStatsDictArray(cleaned)
-    #dumpDictArrayToCsv('stats/', squash)
+    # Manipulate dict array to get what we need
+    cleaned = cleanDeviceDictArray(dictArray, timeKey)
 
-    return squash
+    return cleaned
 
-def logDeviceStats(prefix, statsDictArray, timeKey):
+def updateDeviceStats(prevStats, newStats, timeKey, deviceLogDir):
+    """Given old and new stats, calculate Delta, On-Peak, and Off-Peak
     """
-    FORMAT:
 
+    """newStats[]:
+    IP Address
+    MAC Address
+    Total Bytes
+    """
+
+    """oldStats[]:
+    Time
+    IP Address
+    MAC Address
+    Total Bytes
+    Delta
+    On-Peak
+    Off-Peak
+    """
+
+    """resultStats[]:
+    Time
+    IP Address
+    MAC Address
+    Total Bytes
+    Delta
+    On-Peak
+    Off-Peak
+    """
+
+    """ Problem:
+    when records deleted from router
+    we lost track of the old objects
+
+    When we see that old is now > new
+    we need to calculate user and commune for old as well
+    """
+    # Go through each new device entry
+    for newDeviceDict in newStats:
+        newDeviceDict['Time'] = timeKey
+
+        # search for matching device in old devices
+        found = False
+        for oldDeviceDict in prevStats:
+            # look for match
+            if (oldDeviceDict['MAC Address'] == newDeviceDict['MAC Address']):
+                if (oldDeviceDict['IP Address'] == newDeviceDict['IP Address']):
+                    found = True
+
+                    # We are on the first run, init values
+                    if (oldDeviceDict['Time'] == newDeviceDict['Time']):
+                        newDeviceDict['Delta'] = 0
+                        newDeviceDict['On-Peak'] = newDeviceDict['Total Bytes']
+                        newDeviceDict['Off-Peak'] = 0
+                    else:
+                        newDeviceDict['Delta'] = newDeviceDict['Total Bytes'] - oldDeviceDict['Total Bytes']
+
+                        if (newDeviceDict['Delta'] < 0):
+                            newDeviceDict['Delta'] = newDeviceDict['Total Bytes']
+                            print 'Negative delta!'
+
+                        # TODO: Categorise Peak and off peak
+                        newDeviceDict['On-Peak'] = newDeviceDict['Delta'] + oldDeviceDict['On-Peak']
+                        newDeviceDict['Off-Peak'] = 0
+
+        # No matching old dict was found
+        # Need to initialize the values
+        if (found == False):
+            print('No prev dict found for: ')
+            print(newDeviceDict)
+
+            print('Loading from csv...')
+            old = loadDevice(deviceLogDir, newDeviceDict['MAC Address'], newDeviceDict['IP Address'])
+
+            if (len(old) == 0):
+                print('Creating new record')
+                newDeviceDict['Delta'] = 0
+                newDeviceDict['On-Peak'] = newDeviceDict['Total Bytes']
+                newDeviceDict['Off-Peak'] = 0
+            else:
+                print('csv found!')
+                newDeviceDict['Delta'] = newDeviceDict['Total Bytes'] - old['Total Bytes']
+
+                if (newDeviceDict['Delta'] < 0):
+                    newDeviceDict['Delta'] = newDeviceDict['Total Bytes']
+                    print 'Negative delta!'
+
+                # TODO: Categorise Peak and off peak
+                newDeviceDict['On-Peak'] = newDeviceDict['Delta'] + old['On-Peak']
+                newDeviceDict['Off-Peak'] = 0
+
+    updatedDeviceStats = newStats
+    return updatedDeviceStats
+
+def logDeviceStats(prefix, statsDictArray):
+    """Save device dict array to log files
+    """
+    """
     filename: M-A-C_I.P
-
-    Time, Total Bytes, Delta Bytes, On-Peak, Off-Peak
-
+    Time, Total Bytes, Delta, On-Peak, Off-Peak
     """
 
     try:
@@ -357,37 +317,92 @@ def logDeviceStats(prefix, statsDictArray, timeKey):
         i = 5
 
     for statsDict in statsDictArray:
-        # file name
-        mac = statsDict['macAddress'].replace(':', '-')
-        ip = statsDict['ipAddress']
+        # Generate file name
+        mac = statsDict['MAC Address'].replace(':', '-')
+        ip = statsDict['IP Address']
         fileName = str(prefix + mac + '_' + ip + '.csv')
 
         # csv fields
-        totalBytes = statsDict['totalBytes']
+        timeKey = statsDict['Time']
+        totalBytes = statsDict['Total Bytes']
+        delta = statsDict['Delta']
+        peak = statsDict['On-Peak']
+        offPeak = statsDict['Off-Peak']
 
         # new device, set up csv for it
+        header = False
+
         if (os.path.isfile(fileName) == False):
-            output = open(fileName, 'a')
-            output.write('Time, Total Bytes, Delta Bytes, On-Peak, Off-Peak\n')
-            # TODO: P and O times
-            output.write('{0}, {1}, {2}, {3}, {4}\n'.format(timeKey, totalBytes, 0, totalBytes, 0))
+            header = True
+
+        output = open(fileName, 'a')
+
+        if (header):
+            output.write('Time, Total Bytes, Delta, On-Peak, Off-Peak\n')
+
+        output.write('{0}, {1}, {2}, {3}, {4}\n'.format(timeKey, totalBytes, delta, peak, offPeak))
+        output.close()
+
+def getUserStats(deviceStatsArray, userMap, timeKey):
+    """ Go through the device dict array and add up all values
+    that belong to each user
+    """
+
+    userStatsArray = []
+
+    # Create the default user
+    unknownUser = {}
+    unknownUser['Name'] = 'Unknown'
+    unknownUser['Time'] = timeKey
+    unknownUser['Total Bytes'] = 0
+    unknownUser['Delta'] = 0
+    unknownUser['On-Peak'] = 0
+    unknownUser['Off-Peak'] = 0
+
+    userStatsArray.append(unknownUser)
+
+    # Open each device and determine to who it belongs
+    for deviceDict in deviceStatsArray:
+        # Get Device info
+        mac = deviceDict['MAC Address']
+        ip = deviceDict['IP Address']
+
+        if (deviceDict['Time'] != timeKey):
+            print('Time key mismatch!')
+
+        # Use usermap to determine to who this mac belongs
+        if (userMap.has_key(mac)):
+
+            # Have we seen this user before?
+            found = False
+            for user in userStatsArray:
+                # If we have seen before, add the values to existing values
+                if (user['Name'] == userMap[mac]):
+                    user['Total Bytes'] += deviceDict['Total Bytes']
+                    user['Delta'] += deviceDict['Delta']
+                    user['On-Peak'] += deviceDict['On-Peak']
+                    user['Off-Peak'] += deviceDict['Off-Peak']
+                    found = True
+
+            # If we have not seen this user before, create the user and set the values
+            if (found == False):
+                tmpUser = {}
+                tmpUser['Name'] = userMap[mac]
+                tmpUser['Time'] = timeKey
+                tmpUser['Total Bytes'] = deviceDict['Total Bytes']
+                tmpUser['Delta'] = deviceDict['Delta']
+                tmpUser['On-Peak'] = deviceDict['On-Peak']
+                tmpUser['Off-Peak'] = deviceDict['Off-Peak']
+                userStatsArray.append(tmpUser)
+
+        # if the mac was not found the the userMap, add it to Unknown user
         else:
-            #print(fileName)
-            # we saw this device before, parse the csv and get the last values.
-            # calculate delta, P and O
-            csv = np.genfromtxt(fileName, delimiter=",", dtype=long)
-            #print(csv[-1][1])
-            #-1 = last row,
-            delta = totalBytes - csv[-1:][0][1]
+            userStatsArray[0]['Total Bytes'] += deviceDict['Total Bytes']
+            userStatsArray[0]['Delta'] += deviceDict['Delta']
+            userStatsArray[0]['On-Peak'] += deviceDict['On-Peak']
+            userStatsArray[0]['Off-Peak'] += deviceDict['Off-Peak']
 
-            if (delta < 0):
-                delta = totalBytes
-
-            # TODO: if time, peak | O
-            peak = csv[-1][3] + delta
-            output = open(fileName, 'a')
-            output.write('{0}, {1}, {2}, {3}, {4}\n'.format(timeKey, totalBytes, delta, peak, 0))
-            output.close()
+    return userStatsArray
 
 def logUserStats(userLogPath, userStatsArray):
     """
@@ -399,7 +414,6 @@ def logUserStats(userLogPath, userStatsArray):
     except OSError:
         i = 5
 
-    #print userStatsArray
 
     for user in userStatsArray:
         fileName = userLogPath + user['Name'] + '.csv'
@@ -411,100 +425,20 @@ def logUserStats(userLogPath, userStatsArray):
         usercsv = open(fileName, 'a')
 
         if (header):
-            usercsv.write('Time, Total Bytes, Delta Bytes, On-Peak, Off-Peak\n')
+            usercsv.write('Time, Total Bytes, Delta, On-Peak, Off-Peak\n')
 
-        usercsv.write('{0}, {1}, {2}, {3}, {4}\n'.format(user['Time'], user['Total Bytes'], user['Delta Bytes'], user['On-Peak'], user['Off-Peak']))
+        usercsv.write('{0}, {1}, {2}, {3}, {4}\n'.format(user['Time'], user['Total Bytes'], user['Delta'], user['On-Peak'], user['Off-Peak']))
         usercsv.close()
-
-def getUserStats(deviceLogPath, userLogPath, userMapPath, timeKey):
-    """
-    Go through the device logs, and add up the last row
-    """
-    userMap = loadUserMap(userMapPath)
-
-    userStatsArray = []
-
-    unknownUser = {}
-    unknownUser['Name'] = 'Unknown'
-    unknownUser['Time'] = timeKey
-    unknownUser['Total Bytes'] = 0
-    unknownUser['Delta Bytes'] = 0
-    unknownUser['On-Peak'] = 0
-    unknownUser['Off-Peak'] = 0
-
-    userStatsArray.append(unknownUser)
-
-    # Open device lig files that belong to each user
-
-    # http://stackoverflow.com/questions/3207219/how-to-list-all-files-of-a-directory-in-python
-    onlyfiles = [f for f in listdir(deviceLogPath) if isfile(join(deviceLogPath, f))]
-
-    for devicecsv in onlyfiles:
-        # get log file info
-
-        mac = getMacFromFileName(devicecsv)
-        ip = getIpFromFileName(devicecsv)
-
-        #print('MAC = ' + mac)
-
-        # load csv
-        csv = np.genfromtxt(deviceLogPath + devicecsv, delimiter=',', dtype=long)
-
-        #error handler
-
-        if (len(csv) == 5):
-            break
-
-        if (csv[-1][0] != timeKey):
-            print('Time key mismatch!')
-            print(len(csv))
-            print(csv)
-            print deviceLogPath + devicecsv
-
-
-        # does this MAC belong to a user?
-        # yes, add the device values to the user dict
-        if (userMap.has_key(mac)):
-            # print(mac + ' belongs to ' + userMap[mac])
-
-            # See if this user exists in the userStatsArray, if so, append, else create new user
-            found = False
-            for user in userStatsArray:
-                if (user['Name'] == userMap[mac]):
-                    found = True
-                    user['Total Bytes'] += csv[-1][1]
-                    user['Delta Bytes'] += csv[-1][2]
-                    user['On-Peak'] += csv[-1][3]
-                    user['Off-Peak'] += csv[-1][4]
-
-            if (found == False):
-                tmpUser = {}
-                tmpUser['Name'] = userMap[mac]
-                tmpUser['Time'] = timeKey
-                tmpUser['Total Bytes'] = csv[-1][1]
-                tmpUser['Delta Bytes'] = csv[-1][2]
-                tmpUser['On-Peak'] = csv[-1][3]
-                tmpUser['Off-Peak'] = csv[-1][4]
-                userStatsArray.append(tmpUser)
-        else:
-            # print(mac + ' not found in userMap!')
-            # Mac does not belong to user, add to the unknown user at index 0
-            userStatsArray[0]['Total Bytes'] += csv[-1][1]
-            userStatsArray[0]['Delta Bytes'] += csv[-1][2]
-            userStatsArray[0]['On-Peak'] += csv[-1][3]
-            userStatsArray[0]['Off-Peak'] += csv[-1][4]
-
-    return userStatsArray
 
 def getCommuneStats(userStats, communeLogPath, timeKey):
     """
-    Loop through all user files and add their last value to commune
+    Loop through all user dicts and add their last value to commune
     """
 
     commune = {}
     commune['Time'] = timeKey
     commune['Total Bytes'] = 0
-    commune['Delta Bytes'] = 0
+    commune['Delta'] = 0
     commune['On-Peak'] = 0
     commune['Off-Peak'] = 0
 
@@ -517,7 +451,7 @@ def getCommuneStats(userStats, communeLogPath, timeKey):
             print csv
 
         commune['Total Bytes'] += userDict['Total Bytes']
-        commune['Delta Bytes'] += userDict['Delta Bytes']
+        commune['Delta'] += userDict['Delta']
         commune['On-Peak'] += userDict['On-Peak']
         commune['Off-Peak'] += userDict['Off-Peak']
 
@@ -536,9 +470,9 @@ def logCommuneStats(communeLogFile, communeStats):
     communecsv = open(communeLogFile, 'a')
 
     if (header):
-        communecsv.write('Time, Total Bytes, Delta Bytes, On-Peak, Off-Peak\n')
+        communecsv.write('Time, Total Bytes, Delta, On-Peak, Off-Peak\n')
 
-    communecsv.write('{0}, {1}, {2}, {3}, {4}\n'.format(communeStats['Time'], communeStats['Total Bytes'], communeStats['Delta Bytes'], communeStats['On-Peak'], communeStats['Off-Peak']))
+    communecsv.write('{0}, {1}, {2}, {3}, {4}\n'.format(communeStats['Time'], communeStats['Total Bytes'], communeStats['Delta'], communeStats['On-Peak'], communeStats['Off-Peak']))
     communecsv.close()
 
 def getIpFromFileName(name):
@@ -569,30 +503,6 @@ def initSession(username, password, session):
         'Connection': 'keep-alive'
     }
 
-def fixIpsInDictArray(statsDictArray):
-    """Convert dec IP to nice IP"""
-
-    newDictArray = statsDictArray
-
-    for statsDict in newDictArray:
-        statsDict['ipAddress'] = decStrToIpStr(statsDict['ipAddress'])
-        statsDict['totalBytes'] = int(statsDict['totalBytes'])
-
-    return newDictArray
-
-def cleanStatsDictArray(statsDictArray):
-    """
-    Loop through dict array and remove invalid dicts
-
-    """
-    newDictArray = []
-
-    for statsDict in statsDictArray:
-        if (len(statsDict) == 12):
-            newDictArray.append(statsDict)
-
-    return newDictArray
-
 def decStrToIpStr(dec):
     binStr = bin(int(dec))
 
@@ -613,23 +523,9 @@ def decStrToIpStr(dec):
 
     return finalStr[:-1]
 
-def squashStatsDictArray(statsDictArray):
-    """Strip extra data"""
-
-    newDictArray = []
-
-    for statsDict in statsDictArray:
-        tmpDict = {'ipAddress': statsDict['ipAddress'],
-                    'macAddress': statsDict['macAddress'],
-                    'totalBytes': statsDict['totalBytes']}
-
-        newDictArray.append(tmpDict)
-
-    return newDictArray
-
 def loadUserMap(path):
     """
-    MAC = User
+    MAC, User
     """
     csv = np.genfromtxt(path, delimiter=", ", dtype=str)
     csv = csv[1:]
@@ -639,5 +535,28 @@ def loadUserMap(path):
         userMap[row[1]] = row[0]
 
     return userMap
+
+def cleanDeviceDictArray(statsDictArray, timeKey):
+    """Strip invalid entries and parse valid entries
+    """
+
+    newDictArray = []
+
+    for statsDict in statsDictArray:
+        # Skip invalid intries
+        if (len(statsDict) == 12):
+            # Strip extra data,
+            # Convert Dev IP to readable IP
+            tmpDict = {'IP Address': decStrToIpStr(statsDict['ipAddress']),
+                        'MAC Address': statsDict['macAddress'],
+                        'Total Bytes': long(statsDict['totalBytes']),
+                        'Time': timeKey,
+                        'Delta': -9999999999,
+                        'On-Peak': -9999999999,
+                        'Off-Peak': -9999999999}
+
+            newDictArray.append(tmpDict)
+
+    return newDictArray
 
 main()
