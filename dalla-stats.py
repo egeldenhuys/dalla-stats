@@ -8,6 +8,7 @@ from os.path import isfile, join
 import csv
 import datetime
 import logging
+import sys
 
 def main():
     parser = argparse.ArgumentParser()
@@ -15,7 +16,7 @@ def main():
     parser.add_argument("-u", "--username", default='', help="the router admin username")
     parser.add_argument("-p", "--password", default='', help="the router admin password")
     parser.add_argument("-i", "--interval", type=int, default=0, help="the interval in seconds to update the statistics.")
-    parser.add_argument("-d", "--working-directory", default='logs', help="directory to save logs")
+    parser.add_argument("-d", "--log-directory", default='logs', help="directory to save logs")
     parser.add_argument("-l", "--enable-logging", default=False, action='store_true', help="Log statistics?")
     parser.add_argument('-v', '--version', action='version', version='%(prog)s v0.0.2')
 
@@ -25,22 +26,20 @@ def main():
         print('[ERROR] Please supply username and password')
         exit()
 
-    try:
-        os.mkdir(args.working_directory)
-    except OSError:
-        i = 5
-
-    summaryPath = args.working_directory + '/devices.csv'
-    devicePath = args.working_directory + '/devices/'
-    userDir = args.working_directory + '/users/'
-    totalPath = args.working_directory + '/total.csv'
-    mapPath = args.working_directory + '/user-map.csv'
+    logDir = args.log_directory
 
     session = initSession(args.username, args.password)
 
-    userMap = loadUserMap(mapPath)
+    userMap = loadUserMap(logDir)
 
-    oldStats = loadDeviceSummary(summaryPath)
+    oldStats = loadDeviceSummary(logDir)
+
+    try:
+        os.mkdir(logDir)
+    except OSError:
+        i = 5
+
+    print('[INFO] Starting...')
 
     while (True):
 
@@ -48,18 +47,18 @@ def main():
 
         if (len(deviceStats) != 0):
             delta = calculateDeviceDeltas(oldStats, deviceStats)
-
             mergeDevices(oldStats, delta)
-            saveDeviceSummary(delta, summaryPath)
+
+            saveDeviceSummary(delta, logDir)
 
             if (args.enable_logging):
-                logDeviceStats(delta, devicePath)
+                logDeviceStats(delta, logDir)
 
                 userStats = getUserStats(delta, userMap)
-                logUserStats(userStats, userDir)
+                logUserStats(userStats, logDir)
 
                 total = getTotalStats(userStats)
-                logTotalStats(total, totalPath)
+                logTotalStats(total, logDir)
 
             oldStats = delta
 
@@ -68,11 +67,17 @@ def main():
 
         time.sleep(args.interval)
 
-def saveDeviceSummary(deviceStatsArray, summaryFile):
+def saveDeviceSummary(deviceStatsArray, logDir):
     """Save the given dict array to file
     """
 
-    summaryFile = open(summaryFile, 'w')
+    try:
+        os.mkdir(logDir)
+    except OSError:
+        i = 5
+
+    summaryFile = open(logDir + '/deviceSummary.csv', 'w')
+
 
     summaryFile.write('MAC Address, IP Address, Time,Total Bytes, Delta, On-Peak, Off-Peak\n')
 
@@ -84,7 +89,7 @@ def saveDeviceSummary(deviceStatsArray, summaryFile):
     summaryFile.close()
 
 
-def loadDeviceSummary(summaryFile):
+def loadDeviceSummary(logDir):
     """Load the device summary into a dict array
     """
 
@@ -93,10 +98,10 @@ def loadDeviceSummary(summaryFile):
     """
 
     deviceStats = []
-    if (os.path.isfile(summaryFile) == False):
+    if (os.path.isfile(logDir + '/deviceSummary.csv') == False):
         return []
 
-    summaryFile = open(summaryFile, 'r')
+    summaryFile = open(logDir + '/deviceSummary.csv', 'r')
     reader = csv.reader(summaryFile, delimiter=',', skipinitialspace=True)
 
     for row in reader:
@@ -179,10 +184,18 @@ def getDeviceRecords(session):
     url = 'http://192.168.1.1/cgi?1&5'
     session.headers.update({'Referer': 'http://192.168.1.1/mainFrame.htm'})
     data ='[STAT_CFG#0,0,0,0,0,0#0,0,0,0,0,0]0,0\r\n[STAT_ENTRY#0,0,0,0,0,0#0,0,0,0,0,0]1,0\r\n'
+
     try:
-        r = session.post(url=url, data=data)
-    except ConnectionError:
-        print('[ERROR] Failed to establish connection: Network unreachable!')
+        r = session.post(url=url, data=data, timeout=1)
+    except requests.ConnectionError:
+        print('[ERROR] Network unreachable!')
+        return {}
+    except:
+        print('[ERROR] Unexpected error: ', sys.exc_info()[0])
+        return {}
+
+
+
     rawStats = r.text
 
     error = rawStats.split('\n')
@@ -280,6 +293,7 @@ def calculateDeviceDeltas(oldDeviceDeltas, currentDeviceRecords):
                         newDeviceDict['Delta'] = newDeviceDict['Total Bytes']
 
                         print(oldDeviceDict)
+                        print('')
 
                     classifyDelta(newDeviceDict)
 
@@ -291,6 +305,7 @@ def calculateDeviceDeltas(oldDeviceDeltas, currentDeviceRecords):
             classifyDelta(newDeviceDict)
 
             print(newDeviceDict)
+            print('')
 
     return localCurrent
 
@@ -303,7 +318,7 @@ def logDeviceStats(statsDictArray, prefix):
     """
 
     try:
-        os.mkdir(prefix)
+        os.mkdir(prefix + '/devices/')
     except OSError:
         i = 5
 
@@ -311,7 +326,7 @@ def logDeviceStats(statsDictArray, prefix):
         # Generate file name
         mac = statsDict['MAC Address'].replace(':', '-')
         ip = statsDict['IP Address']
-        fileName = str(prefix + mac + '_' + ip + '.csv')
+        fileName = str(prefix + '/devices/' + mac + '_' + ip + '.csv')
 
         # csv fields
         timeKey = statsDict['Time']
@@ -397,18 +412,18 @@ def getUserStats(deviceStatsArray, userMap):
 
     return userStatsArray
 
-def logUserStats(userStatsArray, userLogPath):
+def logUserStats(userStatsArray, logDir):
     """
     Append the user data to their csv files
     """
 
     try:
-        os.mkdir(userLogPath)
+        os.mkdir(logDir + '/users/')
     except OSError:
         i = 5
 
     for user in userStatsArray:
-        fileName = userLogPath + user['Name'] + '.csv'
+        fileName = logDir + '/users/' + user['Name'] + '.csv'
         header = False
 
         if (os.path.isfile(fileName) == False):
@@ -448,17 +463,24 @@ def getTotalStats(userStats):
 
     return total
 
-def logTotalStats(totalStats, totalLogFile):
+def logTotalStats(totalStats, logDir):
     """
     Append the total to their csv files
     """
 
+    fileName = logDir + '/total.csv'
+
+    try:
+        os.mkdir(logDir)
+    except OSError:
+        i = 5
+
     header = False
 
-    if (os.path.isfile(totalLogFile) == False):
+    if (os.path.isfile(fileName) == False):
         header = True
 
-    totalcsv = open(totalLogFile, 'a')
+    totalcsv = open(fileName, 'a')
     if (header):
         totalcsv.write('Time, Total Bytes, Delta, On-Peak, Off-Peak\n')
 
@@ -525,18 +547,22 @@ def loadUserMap(path):
     MAC, User
     """
 
+    fileName = path + '/user-map.csv'
+
     userMap = {}
 
-    if (os.path.isfile(path) == False):
+    if (os.path.isfile(fileName) == False):
         return userMap
 
-    userMapFile = open(path)
+    userMapFile = open(fileName)
     reader = csv.reader(userMapFile, delimiter=',', skipinitialspace=True)
 
     for row in reader:
         if (reader.line_num != 1):
             userMap[row[1]] = row[0]
 
+    userMapFile.close()
+    
     return userMap
 
 def logout(session):
@@ -545,7 +571,13 @@ def logout(session):
     session.headers.update({'Referer': 'http://192.168.1.1/MenuRpm.htm'})
     data ='[/cgi/logout#0,0,0,0,0,0#0,0,0,0,0,0]0,0\r\n'
 
-    r = session.post(url=url, data=data)
+    try:
+        r = session.post(url=url, data=data)
+    except:
+        print(str(datetime.datetime.now()) + ' [ERROR] Unexpected error: ', sys.exc_info()[0])
+        return
+
+
     if (r.text != '[cgi]0\n[error]0'):
         print('[ERROR] Logout failed:')
         if (r.text == '<html><head><title>500 Internal Server Error</title></head><body><center><h1>500 Internal Server Error</h1></center></body></html>'):
