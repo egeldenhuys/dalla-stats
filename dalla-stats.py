@@ -100,10 +100,10 @@ def loadDeviceSummary(summaryFile):
             tmpDevice['MAC Address'] = row[0]
             tmpDevice['IP Address'] = row[1]
             tmpDevice['Time'] = row[2]
-            tmpDevice['Total Bytes'] = long(row[3])
-            tmpDevice['Delta'] = long(row[4])
-            tmpDevice['On-Peak'] = long(row[5])
-            tmpDevice['Off-Peak'] = long(row[6])
+            tmpDevice['Total Bytes'] = int(row[3])
+            tmpDevice['Delta'] = int(row[4])
+            tmpDevice['On-Peak'] = int(row[5])
+            tmpDevice['Off-Peak'] = int(row[6])
 
             deviceStats.append(tmpDevice)
 
@@ -149,7 +149,7 @@ def initDevices(statsDictArray, timeKey):
             # Convert Dec IP to readable IP
             tmpDict = { 'MAC Address': statsDict['macAddress'],
                         'IP Address': decStrToIpStr(statsDict['ipAddress']),
-                        'Total Bytes': long(statsDict['totalBytes']),
+                        'Total Bytes': int(statsDict['totalBytes']),
                         'Time': timeKey,
                         'Delta': -9999999999,
                         'On-Peak': -9999999999,
@@ -315,7 +315,7 @@ def logDeviceStats(statsDictArray, prefix):
 
 def getUserStats(deviceStatsArray, userMap):
     """ Go through the device dict array and add up all values
-    that belong to each user
+    that beint to each user
     """
 
     timeKey = int(time.time())
@@ -333,7 +333,7 @@ def getUserStats(deviceStatsArray, userMap):
 
     userStatsArray.append(unknownUser)
 
-    # Open each device and determine to who it belongs
+    # Open each device and determine to who it beints
     for deviceDict in deviceStatsArray:
         # Get Device info
         mac = deviceDict['MAC Address']
@@ -342,7 +342,7 @@ def getUserStats(deviceStatsArray, userMap):
         # if (deviceDict['Time'] != timeKey):
         #     print('[INFO] Time key mismatch! (getUserStats)')
 
-        # Use usermap to determine to who this mac belongs
+        # Use usermap to determine to who this mac beints
         if (userMap.has_key(mac)):
 
             # Have we seen this user before?
@@ -458,7 +458,10 @@ def getMacFromFileName(name):
     return result
 
 def initSession(username, password, session):
-    auth = 'Basic ' + base64.b64encode(username + ':' + password)
+    raw = username + ':' + password
+    encoded = base64.b64encode(raw.encode('utf-8'))
+
+    auth = 'Basic ' + encoded.decode('utf-8')
     cookie = 'Authorization=' + auth
 
     session.headers = {
@@ -504,11 +507,11 @@ def loadUserMap(path):
         return userMap
 
     userMapFile = open(path)
-    reader = csv.reader(path, delimiter=',', skipinitialspace=True)
+    reader = csv.reader(userMapFile, delimiter=',', skipinitialspace=True)
 
-    reader.next()
     for row in reader:
-        userMap[row[0]] = row[1]
+        if (reader.line_num != 1):
+            userMap[row[1]] = row[0]
 
     return userMap
 
