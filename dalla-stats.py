@@ -17,14 +17,18 @@ def main_test():
 def main():
     parser = argparse.ArgumentParser()
 
-    parser.add_argument("-u", "--username", help="the router admin username")
-    parser.add_argument("-p", "--password", help="the router admin password")
+    parser.add_argument("-u", "--username", default='', help="the router admin username")
+    parser.add_argument("-p", "--password", default='', help="the router admin password")
     parser.add_argument("-i", "--interval", type=int, default=0, help="the interval in seconds to update the statistics.")
     parser.add_argument("-d", "--working-directory", default='logs', help="directory to save logs")
     parser.add_argument("-l", "--enable-logging", default=False, action='store_true', help="Log statistics?")
     parser.add_argument('-v', '--version', action='version', version='%(prog)s v0.0.2')
 
     args = parser.parse_args()
+
+    if (args.username == '' or args.password == ''):
+        print('[ERROR] Please supply username and password')
+        exit()
 
     try:
         os.mkdir(args.working_directory)
