@@ -363,7 +363,7 @@ def getUserStats(deviceStatsArray, userMap):
         #     print('[INFO] Time key mismatch! (getUserStats)')
 
         # Use usermap to determine to who this mac beints
-        if (userMap.has_key(mac)):
+        if (mac in userMap):
 
             # Have we seen this user before?
             found = False
