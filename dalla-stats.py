@@ -8,13 +8,19 @@ from os.path import isfile, join
 import csv
 import datetime
 
+def main_test():
+
+    session = initSession('admin', 'admin')
+
+    print(getDeviceRecords(session))
+
 def main():
     parser = argparse.ArgumentParser()
 
     parser.add_argument("-u", "--username", help="the router admin username")
     parser.add_argument("-p", "--password", help="the router admin password")
     parser.add_argument("-i", "--interval", type=int, default=0, help="the interval in seconds to update the statistics.")
-    parser.add_argument("-d", "--working-directory", default='.', help="directory to save logs")
+    parser.add_argument("-d", "--working-directory", default='logs', help="directory to save logs")
     parser.add_argument("-l", "--enable-logging", default=False, action='store_true', help="Log statistics?")
     parser.add_argument('-v', '--version', action='version', version='%(prog)s v0.0.2')
 
@@ -31,8 +37,7 @@ def main():
     totalPath = args.working_directory + '/total.csv'
     mapPath = args.working_directory + '/user-map.csv'
 
-    session = requests.session()
-    initSession(args.username, args.password, session)
+    session = initSession(args.username, args.password)
 
     userMap = loadUserMap(mapPath)
 
@@ -41,24 +46,26 @@ def main():
     while (True):
 
         deviceStats = getDeviceRecords(session)
-        delta = calculateDeviceDeltas(oldStats, deviceStats)
 
-        mergeDevices(oldStats, delta)
-        saveDeviceSummary(delta, summaryPath)
+        if (len(deviceStats) != 0):
+            delta = calculateDeviceDeltas(oldStats, deviceStats)
 
-        if (args.enable_logging):
-            logDeviceStats(delta, devicePath)
+            mergeDevices(oldStats, delta)
+            saveDeviceSummary(delta, summaryPath)
 
-            userStats = getUserStats(delta, userMap)
-            logUserStats(userStats, userDir)
+            if (args.enable_logging):
+                logDeviceStats(delta, devicePath)
 
-            total = getTotalStats(userStats)
-            logTotalStats(total, totalPath)
+                userStats = getUserStats(delta, userMap)
+                logUserStats(userStats, userDir)
+
+                total = getTotalStats(userStats)
+                logTotalStats(total, totalPath)
+
+            oldStats = delta
 
         if ( args.interval == 0):
             break
-
-        oldStats = delta
 
         time.sleep(args.interval)
 
@@ -177,6 +184,17 @@ def getDeviceRecords(session):
     r = session.post(url=url, data=data)
     rawStats = r.text
 
+    error = rawStats.split('\n')
+
+    if (error[-1] != '[error]0'):
+        print(datetime.datetime() + '[ERROR] Failed to get device records from router!')
+        if (r.text == '<html><head><title>500 Internal Server Error</title></head><body><center><h1>500 Internal Server Error</h1></center></body></html>'):
+            print('\t Another admin has logged in!')
+        else:
+            print('\t' + r.text)
+
+        return []
+
     dictArray = []
     tmpDict = {}
 
@@ -210,6 +228,8 @@ def getDeviceRecords(session):
 
     # Manipulate dict array to get what we need
     init = initDevices(dictArray, timeKey)
+
+    logout(session)
 
     return init
 
@@ -438,7 +458,6 @@ def logTotalStats(totalStats, totalLogFile):
         header = True
 
     totalcsv = open(totalLogFile, 'a')
-
     if (header):
         totalcsv.write('Time, Total Bytes, Delta, On-Peak, Off-Peak\n')
 
@@ -457,7 +476,9 @@ def getMacFromFileName(name):
 
     return result
 
-def initSession(username, password, session):
+def initSession(username, password):
+    session = requests.session()
+
     raw = username + ':' + password
     encoded = base64.b64encode(raw.encode('utf-8'))
 
@@ -475,6 +496,8 @@ def initSession(username, password, session):
         'Referer': 'http://192.168.1.1/',
         'Connection': 'keep-alive'
     }
+
+    return session
 
 def decStrToIpStr(dec):
     binStr = bin(int(dec))
@@ -514,5 +537,19 @@ def loadUserMap(path):
             userMap[row[1]] = row[0]
 
     return userMap
+
+def logout(session):
+    # Configure page specific headers
+    url = 'http://192.168.1.1/cgi?8'
+    session.headers.update({'Referer': 'http://192.168.1.1/MenuRpm.htm'})
+    data ='[/cgi/logout#0,0,0,0,0,0#0,0,0,0,0,0]0,0\r\n'
+
+    r = session.post(url=url, data=data)
+    if (r.text != '[cgi]0\n[error]0'):
+        print('[ERROR] Logout failed:')
+        if (r.text == '<html><head><title>500 Internal Server Error</title></head><body><center><h1>500 Internal Server Error</h1></center></body></html>'):
+            print('\t Another admin has logged in!')
+        else:
+            print('\t' + r.text)
 
 main()
