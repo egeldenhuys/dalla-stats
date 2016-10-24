@@ -9,7 +9,7 @@ import csv
 import datetime
 import logging
 
-def main_():
+def main():
     parser = argparse.ArgumentParser()
 
     parser.add_argument("-u", "--username", default='', help="the router admin username")
