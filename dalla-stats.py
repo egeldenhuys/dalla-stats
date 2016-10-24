@@ -16,6 +16,7 @@ def main():
     parser.add_argument("-i", "--interval", type=int, default=0, help="the interval in seconds to update the statistics.")
     parser.add_argument("-d", "--working-directory", default='.', help="directory to save logs")
     parser.add_argument("-l", "--enable-logging", default=False, action='store_true', help="Log statistics?")
+    parser.add_argument('-v', '--version', action='version', version='%(prog)s v0.0.2')
 
     args = parser.parse_args()
 
