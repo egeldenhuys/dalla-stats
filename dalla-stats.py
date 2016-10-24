@@ -1,21 +1,3 @@
-"""
-Process:
-
-Try to load summary from disk.
-    Summary contains the last record for all devices
-
-If we could not load a summary, then we are on first run.
-    Do not call update on the data.
-
-Get device stats from router
-if we are on first run, do not call update
-else call update on the stats and get the new stats
-
-old = new
-
-repeat
-
-"""
 import argparse
 import requests
 import base64
@@ -31,15 +13,28 @@ def main():
 
     parser.add_argument("-u", "--username", help="the router admin username")
     parser.add_argument("-p", "--password", help="the router admin password")
-    parser.add_argument("-i", "--interval", type=int, default=0, help="the interval in seconds to update the statistics. If 0, only runs once")
+    parser.add_argument("-i", "--interval", type=int, default=0, help="the interval in seconds to update the statistics.")
     parser.add_argument("-d", "--working-directory", default='.', help="directory to save logs")
+    parser.add_argument("-l", "--enable-logging", default=False, action='store_true', help="Log statistics?")
 
     args = parser.parse_args()
 
+    try:
+        os.mkdir(args.working_directory)
+    except OSError:
+        i = 5
+
     summaryPath = args.working_directory + '/devices.csv'
+    devicePath = args.working_directory + '/devices/'
+    userDir = args.working_directory + '/users/'
+    totalPath = args.working_directory + '/total.csv'
+    mapPath = args.working_directory + '/user-map.csv'
 
     session = requests.session()
     initSession(args.username, args.password, session)
+
+    userMap = loadUserMap(mapPath)
+
     oldStats = loadDeviceSummary(summaryPath)
 
     while (True):
@@ -49,6 +44,15 @@ def main():
 
         mergeDevices(oldStats, delta)
         saveDeviceSummary(delta, summaryPath)
+
+        if (args.enable_logging):
+            logDeviceStats(delta, devicePath)
+
+            userStats = getUserStats(delta, userMap)
+            logUserStats(userStats, userDir)
+
+            total = getTotalStats(userStats)
+            logTotalStats(total, totalPath)
 
         if ( args.interval == 0):
             break
@@ -251,6 +255,8 @@ def calculateDeviceDeltas(oldDeviceDeltas, currentDeviceRecords):
 
                     if (newDeviceDict['Delta'] < 0):
                         print(str(datetime.datetime.now()) + ' [WARN] Device has negative delta! Fixing...')
+                        newDeviceDict['Delta'] = newDeviceDict['Total Bytes']
+
                         print(oldDeviceDict)
 
                     classifyDelta(newDeviceDict)
@@ -266,7 +272,7 @@ def calculateDeviceDeltas(oldDeviceDeltas, currentDeviceRecords):
 
     return localCurrent
 
-def logDeviceStats(prefix, statsDictArray):
+def logDeviceStats(statsDictArray, prefix):
     """Save device dict array to log files
     """
     """
@@ -311,12 +317,14 @@ def getUserStats(deviceStatsArray, userMap):
     that belong to each user
     """
 
+    timeKey = int(time.time())
+
     userStatsArray = []
 
     # Create the default user
     unknownUser = {}
     unknownUser['Name'] = 'Unknown'
-    unknownUser['Time'] = -1
+    unknownUser['Time'] = timeKey
     unknownUser['Total Bytes'] = 0
     unknownUser['Delta'] = 0
     unknownUser['On-Peak'] = 0
@@ -330,8 +338,8 @@ def getUserStats(deviceStatsArray, userMap):
         mac = deviceDict['MAC Address']
         ip = deviceDict['IP Address']
 
-        if (deviceDict['Time'] != timeKey):
-            print('Time key mismatch!')
+        # if (deviceDict['Time'] != timeKey):
+        #     print('[INFO] Time key mismatch! (getUserStats)')
 
         # Use usermap to determine to who this mac belongs
         if (userMap.has_key(mac)):
@@ -367,7 +375,7 @@ def getUserStats(deviceStatsArray, userMap):
 
     return userStatsArray
 
-def logUserStats(userLogPath, userStatsArray):
+def logUserStats(userStatsArray, userLogPath):
     """
     Append the user data to their csv files
     """
@@ -376,7 +384,6 @@ def logUserStats(userLogPath, userStatsArray):
         os.mkdir(userLogPath)
     except OSError:
         i = 5
-
 
     for user in userStatsArray:
         fileName = userLogPath + user['Name'] + '.csv'
@@ -393,50 +400,49 @@ def logUserStats(userLogPath, userStatsArray):
         usercsv.write('{0}, {1}, {2}, {3}, {4}\n'.format(user['Time'], user['Total Bytes'], user['Delta'], user['On-Peak'], user['Off-Peak']))
         usercsv.close()
 
-def getCommuneStats(userStats, communeLogPath, timeKey):
+def getTotalStats(userStats):
     """
-    Loop through all user dicts and add their last value to commune
+    Loop through all user dicts and add their last value to total
     """
 
-    commune = {}
-    commune['Time'] = timeKey
-    commune['Total Bytes'] = 0
-    commune['Delta'] = 0
-    commune['On-Peak'] = 0
-    commune['Off-Peak'] = 0
+    timeKey = int(time.time())
+
+    total = {}
+    total['Time'] = timeKey
+    total['Total Bytes'] = 0
+    total['Delta'] = 0
+    total['On-Peak'] = 0
+    total['Off-Peak'] = 0
 
     for userDict in userStats:
 
-        if (userDict['Time'] != timeKey):
-            print timeKey
-            print(fileName)
-            print('Time key mismatch!')
-            print csv
+        # if (userDict['Time'] != timeKey):
+        #     print('[WARN] Time key mismatch! (getTotalStats)')
 
-        commune['Total Bytes'] += userDict['Total Bytes']
-        commune['Delta'] += userDict['Delta']
-        commune['On-Peak'] += userDict['On-Peak']
-        commune['Off-Peak'] += userDict['Off-Peak']
+        total['Total Bytes'] += userDict['Total Bytes']
+        total['Delta'] += userDict['Delta']
+        total['On-Peak'] += userDict['On-Peak']
+        total['Off-Peak'] += userDict['Off-Peak']
 
-    return commune
+    return total
 
-def logCommuneStats(communeLogFile, communeStats):
+def logTotalStats(totalStats, totalLogFile):
     """
-    Append the commune to their csv files
+    Append the total to their csv files
     """
 
     header = False
 
-    if (os.path.isfile(communeLogFile) == False):
+    if (os.path.isfile(totalLogFile) == False):
         header = True
 
-    communecsv = open(communeLogFile, 'a')
+    totalcsv = open(totalLogFile, 'a')
 
     if (header):
-        communecsv.write('Time, Total Bytes, Delta, On-Peak, Off-Peak\n')
+        totalcsv.write('Time, Total Bytes, Delta, On-Peak, Off-Peak\n')
 
-    communecsv.write('{0}, {1}, {2}, {3}, {4}\n'.format(communeStats['Time'], communeStats['Total Bytes'], communeStats['Delta'], communeStats['On-Peak'], communeStats['Off-Peak']))
-    communecsv.close()
+    totalcsv.write('{0}, {1}, {2}, {3}, {4}\n'.format(totalStats['Time'], totalStats['Total Bytes'], totalStats['Delta'], totalStats['On-Peak'], totalStats['Off-Peak']))
+    totalcsv.close()
 
 def getIpFromFileName(name):
     result = name.split('_')
