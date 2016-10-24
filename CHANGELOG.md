@@ -3,8 +3,14 @@
 This project adheres to [Semantic Versioning](http://semver.org/).
 
 ## Unreleased
+
+## 0.0.3 - 2016-10-24
 ### Added
-- Router error handling
+- Port to Python 3
+
+### Fixed
+- Handles router errors #10
+- Keeps data on restart #11
 
 ## 0.0.2 - 2016-10-24
 ### Added
