@@ -7,14 +7,9 @@ from os import listdir
 from os.path import isfile, join
 import csv
 import datetime
+import logging
 
-def main_test():
-
-    session = initSession('admin', 'admin')
-
-    print(getDeviceRecords(session))
-
-def main():
+def main_():
     parser = argparse.ArgumentParser()
 
     parser.add_argument("-u", "--username", default='', help="the router admin username")
@@ -184,14 +179,16 @@ def getDeviceRecords(session):
     url = 'http://192.168.1.1/cgi?1&5'
     session.headers.update({'Referer': 'http://192.168.1.1/mainFrame.htm'})
     data ='[STAT_CFG#0,0,0,0,0,0#0,0,0,0,0,0]0,0\r\n[STAT_ENTRY#0,0,0,0,0,0#0,0,0,0,0,0]1,0\r\n'
-
-    r = session.post(url=url, data=data)
+    try:
+        r = session.post(url=url, data=data)
+    except ConnectionError:
+        print('[ERROR] Failed to establish connection: Network unreachable!')
     rawStats = r.text
 
     error = rawStats.split('\n')
 
     if (error[-1] != '[error]0'):
-        print(datetime.datetime() + '[ERROR] Failed to get device records from router!')
+        print('[ERROR] Failed to get device records from router!')
         if (r.text == '<html><head><title>500 Internal Server Error</title></head><body><center><h1>500 Internal Server Error</h1></center></body></html>'):
             print('\t Another admin has logged in!')
         else:
