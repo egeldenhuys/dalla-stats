@@ -5,6 +5,7 @@ This project adheres to [Semantic Versioning](http://semver.org/).
 ## Unreleased
 ### Added
 - Log timestamp to console when fetching records
+- Now classify data has On-Peak or Off-Peak depending on timestamp of device record
 
 ## 0.0.3 - 2016-10-24
 ### Added
