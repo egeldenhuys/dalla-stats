@@ -3,6 +3,8 @@
 This project adheres to [Semantic Versioning](http://semver.org/).
 
 ## Unreleased
+### Added
+- Log timestamp to console when fetching records
 
 ## 0.0.3 - 2016-10-24
 ### Added

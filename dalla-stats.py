@@ -43,6 +43,9 @@ def main():
 
     while (True):
 
+        timeKey = int(time.time())
+        print('[INFO] Getting device records @ ' + str(timeKey))
+        
         deviceStats = getDeviceRecords(session)
 
         if (len(deviceStats) != 0):
