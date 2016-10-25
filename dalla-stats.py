@@ -39,36 +39,49 @@ def main():
     except OSError:
         i = 5
 
+    delta = []
+
     print('[INFO] Starting...')
 
+    abort = False
+
     while (True):
+        try:
+            timeKey = int(time.time())
+            print('[INFO] Getting device records @ ' + str(timeKey))
 
-        timeKey = int(time.time())
-        print('[INFO] Getting device records @ ' + str(timeKey))
-        
-        deviceStats = getDeviceRecords(session)
+            deviceStats = getDeviceRecords(session)
 
-        if (len(deviceStats) != 0):
-            delta = calculateDeviceDeltas(oldStats, deviceStats)
-            mergeDevices(oldStats, delta)
+            if (len(deviceStats) != 0):
+                delta = calculateDeviceDeltas(oldStats, deviceStats)
 
-            saveDeviceSummary(delta, logDir)
+                mergeDevices(oldStats, delta)
+                saveDeviceSummary(delta, logDir)
 
-            if (args.enable_logging):
-                logDeviceStats(delta, logDir)
+                if (args.enable_logging):
+                    logDeviceStats(delta, logDir)
 
-                userStats = getUserStats(delta, userMap)
-                logUserStats(userStats, logDir)
+                    userStats = getUserStats(delta, userMap)
+                    logUserStats(userStats, logDir)
 
-                total = getTotalStats(userStats)
-                logTotalStats(total, logDir)
+                    total = getTotalStats(userStats)
+                    logTotalStats(total, logDir)
 
-            oldStats = delta
+                oldStats = delta
 
-        if ( args.interval == 0):
-            break
+            if ( args.interval == 0):
+                break
 
-        time.sleep(args.interval)
+            if (abort == False):
+                time.sleep(args.interval)
+            else:
+                break
+
+        except KeyboardInterrupt:
+            print('[INFO] Exiting. Please wait...')
+            time.sleep(1)
+            abort = True
+
 
 def saveDeviceSummary(deviceStatsArray, logDir):
     """Save the given dict array to file
@@ -193,6 +206,9 @@ def getDeviceRecords(session):
     except requests.ConnectionError:
         print('[ERROR] Network unreachable!')
         return {}
+    except requests.ReadTimeout:
+        print('[ERROR] Connection timeout!')
+        return {}
     except:
         print('[ERROR] Unexpected error: ', sys.exc_info()[0])
         return {}
@@ -261,8 +277,12 @@ def classifyDelta(deviceDict):
     if (deviceDict['Off-Peak'] < 0):
         deviceDict['Off-Peak'] = 0
 
-    deviceDict['On-Peak'] = deviceDict['On-Peak'] + deviceDict['Delta']
-    deviceDict['Off-Peak'] = 0
+    localTime = time.localtime(deviceDict['Time'])
+
+    if (localTime.tm_hour < 6):
+        deviceDict['Off-Peak'] = deviceDict['Off-Peak'] + deviceDict['Delta']
+    else:
+        deviceDict['On-Peak'] = deviceDict['On-Peak'] + deviceDict['Delta']
 
 def calculateDeviceDeltas(oldDeviceDeltas, currentDeviceRecords):
 
