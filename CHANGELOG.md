@@ -4,6 +4,13 @@ This project adheres to [Semantic Versioning](http://semver.org/).
 
 ## Unreleased
 
+## 0.0.4 - 2016-10-25
+### Added
+- Log timestamp to console when fetching records
+- Now classify data has On-Peak or Off-Peak depending on timestamp of device record
+- Catches KeyboardInterrupt and does a final capture and saves to disk
+- Create overview.csv that contains a summary for TOTAL and each USER
+
 ## 0.0.3 - 2016-10-24
 ### Added
 - Port to Python 3

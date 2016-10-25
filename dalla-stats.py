@@ -18,7 +18,7 @@ def main():
     parser.add_argument("-i", "--interval", type=int, default=0, help="the interval in seconds to update the statistics.")
     parser.add_argument("-d", "--log-directory", default='logs', help="directory to save logs")
     parser.add_argument("-l", "--enable-logging", default=False, action='store_true', help="Log statistics?")
-    parser.add_argument('-v', '--version', action='version', version='%(prog)s v0.0.3')
+    parser.add_argument('-v', '--version', action='version', version='%(prog)s v0.0.4')
 
     args = parser.parse_args()
 
@@ -39,33 +39,113 @@ def main():
     except OSError:
         i = 5
 
+    delta = []
+
     print('[INFO] Starting...')
 
+    abort = False
+
     while (True):
+        try:
+            timeKey = int(time.time())
+            print('[INFO] Getting device records @ ' + str(timeKey))
 
-        deviceStats = getDeviceRecords(session)
+            deviceStats = getDeviceRecords(session)
 
-        if (len(deviceStats) != 0):
-            delta = calculateDeviceDeltas(oldStats, deviceStats)
-            mergeDevices(oldStats, delta)
+            if (len(deviceStats) != 0):
+                delta = calculateDeviceDeltas(oldStats, deviceStats)
 
-            saveDeviceSummary(delta, logDir)
-
-            if (args.enable_logging):
-                logDeviceStats(delta, logDir)
+                mergeDevices(oldStats, delta)
+                saveDeviceSummary(delta, logDir)
 
                 userStats = getUserStats(delta, userMap)
-                logUserStats(userStats, logDir)
-
                 total = getTotalStats(userStats)
-                logTotalStats(total, logDir)
+                saveOverview(userStats, total, logDir)
 
-            oldStats = delta
+                oldStats = delta
 
-        if ( args.interval == 0):
-            break
+                if (args.enable_logging):
+                    logDeviceStats(delta, logDir)
+                    logUserStats(userStats, logDir)
+                    logTotalStats(total, logDir)
 
-        time.sleep(args.interval)
+            if ( args.interval == 0):
+                break
+
+            if (abort == False):
+                time.sleep(args.interval)
+            else:
+                break
+
+        except KeyboardInterrupt:
+            print('[INFO] Exiting. Please wait...')
+            time.sleep(1)
+            abort = True
+
+
+def saveOverview(users, total, logDir):
+    compact = True
+
+    """
+    =======
+    TOTAL
+    =======
+    Total    :
+    On-Peak  :
+    Off-Peak :
+
+    =======
+    USERS
+    =======
+    --------
+    Name
+    --------
+    Total    :
+    On-Peak  :
+    Off-Peak :
+
+    --------
+    Name
+    --------
+    Total    :
+    On-Peak  :
+    Off-Peak :
+    """
+
+    fileName = logDir + '/overview.csv'
+
+    try:
+        os.mkdir(logDir)
+    except OSError:
+        i = 5
+
+    overviewFile = open(fileName, 'w')
+
+    # TODO: Sort users based on actual total
+
+    if (compact == True):
+        overviewFile.write('Name, Total, On-Peak, Off-Peak\n')
+        overviewFile.write('TOTAL, ' + str(total['On-Peak'] + total['Off-Peak']) + ', ' + str(total['On-Peak']) + ', ' + str(total['Off-Peak']) + '\n')
+
+        for userDict in users:
+            overviewFile.write(userDict['Name'] + ', ' + str(userDict['On-Peak'] +
+            userDict['Off-Peak']) + ', ' + str(userDict['On-Peak']) + ', ' + str(userDict['Off-Peak']) + '\n')
+    else:
+
+        overviewFile.write('=======\nTOTAL\n=======\n')
+        overviewFile.write('Total    : ' + str(total['On-Peak'] + total['Off-Peak']) + '\n')
+        overviewFile.write('On-Peak  : ' + str(total['On-Peak']) + '\n')
+        overviewFile.write('Off-Peak : ' + str(total['Off-Peak']) + '\n')
+
+        overviewFile.write('=======\nUSERS\n=======\n')
+
+        for userDict in users:
+            overviewFile.write('--------\n' + userDict['Name'] + "\n--------\n")
+            overviewFile.write('Total    : ' + str(userDict['On-Peak'] + userDict['Off-Peak']) + '\n')
+            overviewFile.write('On-Peak  : ' + str(userDict['On-Peak']) + '\n')
+            overviewFile.write('Off-Peak : ' + str(userDict['Off-Peak']) + '\n\n')
+
+    overviewFile.close()
 
 def saveDeviceSummary(deviceStatsArray, logDir):
     """Save the given dict array to file
@@ -190,6 +270,9 @@ def getDeviceRecords(session):
     except requests.ConnectionError:
         print('[ERROR] Network unreachable!')
         return {}
+    except requests.ReadTimeout:
+        print('[ERROR] Connection timeout!')
+        return {}
     except:
         print('[ERROR] Unexpected error: ', sys.exc_info()[0])
         return {}
@@ -258,8 +341,12 @@ def classifyDelta(deviceDict):
     if (deviceDict['Off-Peak'] < 0):
         deviceDict['Off-Peak'] = 0
 
-    deviceDict['On-Peak'] = deviceDict['On-Peak'] + deviceDict['Delta']
-    deviceDict['Off-Peak'] = 0
+    localTime = time.localtime(deviceDict['Time'])
+
+    if (localTime.tm_hour < 6):
+        deviceDict['Off-Peak'] = deviceDict['Off-Peak'] + deviceDict['Delta']
+    else:
+        deviceDict['On-Peak'] = deviceDict['On-Peak'] + deviceDict['Delta']
 
 def calculateDeviceDeltas(oldDeviceDeltas, currentDeviceRecords):
 
