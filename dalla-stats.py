@@ -58,16 +58,16 @@ def main():
                 mergeDevices(oldStats, delta)
                 saveDeviceSummary(delta, logDir)
 
-                if (args.enable_logging):
-                    logDeviceStats(delta, logDir)
-
-                    userStats = getUserStats(delta, userMap)
-                    logUserStats(userStats, logDir)
-
-                    total = getTotalStats(userStats)
-                    logTotalStats(total, logDir)
+                userStats = getUserStats(delta, userMap)
+                total = getTotalStats(userStats)
+                saveOverview(userStats, total, logDir)
 
                 oldStats = delta
+
+                if (args.enable_logging):
+                    logDeviceStats(delta, logDir)
+                    logUserStats(userStats, logDir)
+                    logTotalStats(total, logDir)
 
             if ( args.interval == 0):
                 break
@@ -82,6 +82,70 @@ def main():
             time.sleep(1)
             abort = True
 
+
+def saveOverview(users, total, logDir):
+    compact = True
+
+    """
+    =======
+    TOTAL
+    =======
+    Total    :
+    On-Peak  :
+    Off-Peak :
+
+    =======
+    USERS
+    =======
+    --------
+    Name
+    --------
+    Total    :
+    On-Peak  :
+    Off-Peak :
+
+    --------
+    Name
+    --------
+    Total    :
+    On-Peak  :
+    Off-Peak :
+    """
+
+    fileName = logDir + '/overview.csv'
+
+    try:
+        os.mkdir(logDir)
+    except OSError:
+        i = 5
+
+    overviewFile = open(fileName, 'w')
+
+    # TODO: Sort users based on actual total
+
+    if (compact == True):
+        overviewFile.write('Name, Total, On-Peak, Off-Peak\n')
+        overviewFile.write('TOTAL, ' + str(total['On-Peak'] + total['Off-Peak']) + ', ' + str(total['On-Peak']) + ', ' + str(total['Off-Peak']) + '\n')
+
+        for userDict in users:
+            overviewFile.write(userDict['Name'] + ', ' + str(userDict['On-Peak'] +
+            userDict['Off-Peak']) + ', ' + str(userDict['On-Peak']) + ', ' + str(userDict['Off-Peak']) + '\n')
+    else:
+
+        overviewFile.write('=======\nTOTAL\n=======\n')
+        overviewFile.write('Total    : ' + str(total['On-Peak'] + total['Off-Peak']) + '\n')
+        overviewFile.write('On-Peak  : ' + str(total['On-Peak']) + '\n')
+        overviewFile.write('Off-Peak : ' + str(total['Off-Peak']) + '\n')
+
+        overviewFile.write('=======\nUSERS\n=======\n')
+
+        for userDict in users:
+            overviewFile.write('--------\n' + userDict['Name'] + "\n--------\n")
+            overviewFile.write('Total    : ' + str(userDict['On-Peak'] + userDict['Off-Peak']) + '\n')
+            overviewFile.write('On-Peak  : ' + str(userDict['On-Peak']) + '\n')
+            overviewFile.write('Off-Peak : ' + str(userDict['Off-Peak']) + '\n\n')
+
+    overviewFile.close()
 
 def saveDeviceSummary(deviceStatsArray, logDir):
     """Save the given dict array to file
