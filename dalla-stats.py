@@ -11,14 +11,16 @@ import logging
 import sys
 
 def main():
+    version = 'v0.1-dev'
+
     parser = argparse.ArgumentParser()
 
     parser.add_argument("-u", "--username", default='', help="the router admin username")
     parser.add_argument("-p", "--password", default='', help="the router admin password")
-    parser.add_argument("-i", "--interval", type=int, default=0, help="the interval in seconds to update the statistics.")
-    parser.add_argument("-d", "--log-directory", default='logs', help="directory to save logs")
-    parser.add_argument("-l", "--enable-logging", default=False, action='store_true', help="Log statistics?")
-    parser.add_argument('-v', '--version', action='version', version='%(prog)s v0.0.4')
+    parser.add_argument("-i", "--interval", type=int, default=60, help="the interval in seconds to update the statistics.")
+    parser.add_argument("-d", "--root-directory", default='.', help="directory to save logs")
+    parser.add_argument("-l", "--disable-logging", default=False, action='store_true', help="Log statistics?")
+    parser.add_argument('-v', '--version', action='version', version='%(prog)s ' + version)
 
     args = parser.parse_args()
 
@@ -26,22 +28,27 @@ def main():
         print('[ERROR] Please supply username and password')
         exit()
 
-    logDir = args.log_directory
+    rootDir = args.root_directory
+
+    userMapFile = rootDir + '/user-map.csv'
+    userMap = loadUserMap(userMapFile)
+
+    logDir = rootDir + '/logs/month'
+    cacheFile = logDir + '/cache.csv'
+
+    deviceDir = logDir + '/devices'
+    oldStats = loadDeviceCache(cacheFile)
+
+    userDir = logDir + '/users'
+
+    summaryFile = logDir + '/summary.csv'
+    totalFile = logDir + '/total.csv'
 
     session = initSession(args.username, args.password)
 
-    userMap = loadUserMap(logDir)
-
-    oldStats = loadDeviceSummary(logDir)
-
-    try:
-        os.mkdir(logDir)
-    except OSError:
-        i = 5
-
     delta = []
 
-    print('[INFO] Starting...')
+    print('[INFO] Starting Dalla-Stats ' + version)
 
     abort = False
 
@@ -56,20 +63,20 @@ def main():
                 delta = calculateDeviceDeltas(oldStats, deviceStats)
 
                 mergeDevices(oldStats, delta)
-                saveDeviceSummary(delta, logDir)
+                saveDeviceCache(delta, cacheFile)
 
                 userStats = getUserStats(delta, userMap)
                 total = getTotalStats(userStats)
-                saveOverview(userStats, total, logDir)
+                saveSummary(userStats, total, summaryFile)
 
                 oldStats = delta
 
-                if (args.enable_logging):
-                    logDeviceStats(delta, logDir)
-                    logUserStats(userStats, logDir)
-                    logTotalStats(total, logDir)
+                if (args.disable_logging == False):
+                    logDeviceStats(delta, deviceDir)
+                    logUserStats(userStats, userDir)
+                    logTotalStats(total, totalFile)
 
-            if ( args.interval == 0):
+            if (args.interval == 0):
                 break
 
             if (abort == False):
@@ -78,48 +85,23 @@ def main():
                 break
 
         except KeyboardInterrupt:
-            print('[INFO] Exiting. Please wait...')
+            print('\n[INFO] Exiting. Please wait...')
             time.sleep(1)
             abort = True
+        except:
+            print('[ERROR] Unexpected exception!')
+            print(sys.exc_info()[0])
 
+            print('[INFO] Logging out')
+            logout(session)
 
-def saveOverview(users, total, logDir):
+def saveSummary(users, total, summaryFile):
     compact = True
 
-    """
-    =======
-    TOTAL
-    =======
-    Total    :
-    On-Peak  :
-    Off-Peak :
+    if not os.path.exists(os.path.dirname(summaryFile)):
+        os.makedirs(os.path.dirname(summaryFile))
 
-    =======
-    USERS
-    =======
-    --------
-    Name
-    --------
-    Total    :
-    On-Peak  :
-    Off-Peak :
-
-    --------
-    Name
-    --------
-    Total    :
-    On-Peak  :
-    Off-Peak :
-    """
-
-    fileName = logDir + '/overview.csv'
-
-    try:
-        os.mkdir(logDir)
-    except OSError:
-        i = 5
-
-    overviewFile = open(fileName, 'w')
+    overviewFile = open(summaryFile, 'w')
 
     # TODO: Sort users based on actual total
 
@@ -147,29 +129,25 @@ def saveOverview(users, total, logDir):
 
     overviewFile.close()
 
-def saveDeviceSummary(deviceStatsArray, logDir):
+def saveDeviceCache(deviceStatsArray, cacheFile):
     """Save the given dict array to file
     """
 
-    try:
-        os.mkdir(logDir)
-    except OSError:
-        i = 5
+    if (not os.path.exists(os.path.dirname(cacheFile))):
+        os.makedirs(os.path.dirname(cacheFile))
 
-    summaryFile = open(logDir + '/deviceSummary.csv', 'w')
+    output = open(cacheFile, 'w')
 
-
-    summaryFile.write('MAC Address, IP Address, Time,Total Bytes, Delta, On-Peak, Off-Peak\n')
+    output.write('MAC Address, IP Address, Time,Total Bytes, Delta, On-Peak, Off-Peak\n')
 
     for device in deviceStatsArray:
-        summaryFile.write('{0}, {1}, {2}, {3}, {4}, {5}, {6}\n'.format(device['MAC Address'],
+        output.write('{0}, {1}, {2}, {3}, {4}, {5}, {6}\n'.format(device['MAC Address'],
         device['IP Address'], device['Time'], device['Total Bytes'], device['Delta'],
         device['On-Peak'], device['Off-Peak']))
 
-    summaryFile.close()
+    output.close()
 
-
-def loadDeviceSummary(logDir):
+def loadDeviceCache(cacheFile):
     """Load the device summary into a dict array
     """
 
@@ -178,11 +156,12 @@ def loadDeviceSummary(logDir):
     """
 
     deviceStats = []
-    if (os.path.isfile(logDir + '/deviceSummary.csv') == False):
+
+    if (os.path.isfile(cacheFile) == False):
         return []
 
-    summaryFile = open(logDir + '/deviceSummary.csv', 'r')
-    reader = csv.reader(summaryFile, delimiter=',', skipinitialspace=True)
+    inputFile = open(cacheFile, 'r')
+    reader = csv.reader(inputFile, delimiter=',', skipinitialspace=True)
 
     for row in reader:
         if (reader.line_num != 1):
@@ -198,7 +177,7 @@ def loadDeviceSummary(logDir):
 
             deviceStats.append(tmpDevice)
 
-    summaryFile.close()
+    inputFile.close()
     return deviceStats
 
 def mergeDevices(oldDevices, newDevices):
@@ -273,11 +252,12 @@ def getDeviceRecords(session):
     except requests.ReadTimeout:
         print('[ERROR] Connection timeout!')
         return {}
+    except KeyboardInterrupt:
+        #print('[ERROR] KeyboardInterrupt during getDeviceRecords()')
+        raise
     except:
         print('[ERROR] Unexpected error: ', sys.exc_info()[0])
         return {}
-
-
 
     rawStats = r.text
 
@@ -396,7 +376,7 @@ def calculateDeviceDeltas(oldDeviceDeltas, currentDeviceRecords):
 
     return localCurrent
 
-def logDeviceStats(statsDictArray, prefix):
+def logDeviceStats(statsDictArray, deviceDir):
     """Save device dict array to log files
     """
     """
@@ -404,16 +384,14 @@ def logDeviceStats(statsDictArray, prefix):
     Time, Total Bytes, Delta, On-Peak, Off-Peak
     """
 
-    try:
-        os.mkdir(prefix + '/devices/')
-    except OSError:
-        i = 5
+    if (not os.path.exists(deviceDir)):
+        os.makedirs(deviceDir)
 
     for statsDict in statsDictArray:
         # Generate file name
         mac = statsDict['MAC Address'].replace(':', '-')
         ip = statsDict['IP Address']
-        fileName = str(prefix + '/devices/' + mac + '_' + ip + '.csv')
+        fileName = str(deviceDir + '/' + mac + '_' + ip + '.csv')
 
         # csv fields
         timeKey = statsDict['Time']
@@ -499,18 +477,16 @@ def getUserStats(deviceStatsArray, userMap):
 
     return userStatsArray
 
-def logUserStats(userStatsArray, logDir):
+def logUserStats(userStatsArray, userDir):
     """
     Append the user data to their csv files
     """
 
-    try:
-        os.mkdir(logDir + '/users/')
-    except OSError:
-        i = 5
+    if (not os.path.exists(userDir)):
+        os.mkdir(userDir)
 
     for user in userStatsArray:
-        fileName = logDir + '/users/' + user['Name'] + '.csv'
+        fileName = userDir + '/' + user['Name'] + '.csv'
         header = False
 
         if (os.path.isfile(fileName) == False):
@@ -550,24 +526,20 @@ def getTotalStats(userStats):
 
     return total
 
-def logTotalStats(totalStats, logDir):
+def logTotalStats(totalStats, totalFile):
     """
     Append the total to their csv files
     """
 
-    fileName = logDir + '/total.csv'
-
-    try:
-        os.mkdir(logDir)
-    except OSError:
-        i = 5
+    if (not os.path.exists(os.path.dirname(totalFile))):
+        os.mkdir(os.path.dirname(totalFile))
 
     header = False
 
-    if (os.path.isfile(fileName) == False):
+    if (os.path.isfile(totalFile) == False):
         header = True
 
-    totalcsv = open(fileName, 'a')
+    totalcsv = open(totalFile, 'a')
     if (header):
         totalcsv.write('Time, Total Bytes, Delta, On-Peak, Off-Peak\n')
 
@@ -629,19 +601,16 @@ def decStrToIpStr(dec):
 
     return finalStr[:-1]
 
-def loadUserMap(path):
+def loadUserMap(userMapFile):
     """
     MAC, User
     """
-
-    fileName = path + '/user-map.csv'
-
     userMap = {}
 
-    if (os.path.isfile(fileName) == False):
+    if (os.path.isfile(userMapFile) == False):
         return userMap
 
-    userMapFile = open(fileName)
+    userMapFile = open(userMapFile)
     reader = csv.reader(userMapFile, delimiter=',', skipinitialspace=True)
 
     for row in reader:
@@ -660,6 +629,9 @@ def logout(session):
 
     try:
         r = session.post(url=url, data=data)
+    except KeyboardInterrupt:
+        #print('[ERROR] KeyboardInterrupt during getDeviceRecords()')
+        raise
     except:
         print(str(datetime.datetime.now()) + ' [ERROR] Unexpected error: ', sys.exc_info()[0])
         return
