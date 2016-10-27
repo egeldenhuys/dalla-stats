@@ -11,16 +11,16 @@ import logging
 import sys
 
 def main():
-    version = 'v0.1-dev'
+    version = 'v0.0.5+dev'
 
     parser = argparse.ArgumentParser()
 
     parser.add_argument("-u", "--username", default='', help="the router admin username")
     parser.add_argument("-p", "--password", default='', help="the router admin password")
-    parser.add_argument("-i", "--interval", type=int, default=60, help="the interval in seconds to update the statistics.")
-    parser.add_argument("-d", "--root-directory", default='.', help="directory to save logs")
-    parser.add_argument("-l", "--disable-logging", default=False, action='store_true', help="Log statistics?")
-    parser.add_argument('-v', '--version', action='version', version='%(prog)s ' + version)
+    parser.add_argument("-i", "--interval", type=int, default=0, help="the interval in seconds to update the statistics.")
+    parser.add_argument("-d", "--log-directory", default='logs', help="directory to save logs")
+    parser.add_argument("-l", "--enable-logging", default=False, action='store_true', help="Log statistics?")
+    parser.add_argument('-v', '--version', action='version', version='%(prog)s v0.0.5+dev')
 
     args = parser.parse_args()
 
@@ -186,7 +186,7 @@ def mergeDevices(oldDevices, newDevices):
     """
 
     # Go through all the old devices
-    # If it was not found in the newDevices, add it
+    # If it was not found in the newDevices, add it, and flag it
 
     tmpAdd = []
 
@@ -202,8 +202,12 @@ def mergeDevices(oldDevices, newDevices):
             tmpAdd.append(old)
 
     for add in tmpAdd:
-        #print('Device not found in new records, adding it now:')
-        #print(add)
+        # Flag this device as it was not found on the router
+        # So we do not want to add a duplicate entry in the log file
+        # This flag will only be present in the mergeDevices if not found
+        # Otherwise this flag will not be merged
+
+        add['DO_NOT_LOG'] = True
         newDevices.append(add)
 
 def initDevices(statsDictArray, timeKey):
@@ -388,31 +392,33 @@ def logDeviceStats(statsDictArray, deviceDir):
         os.makedirs(deviceDir)
 
     for statsDict in statsDictArray:
-        # Generate file name
-        mac = statsDict['MAC Address'].replace(':', '-')
-        ip = statsDict['IP Address']
-        fileName = str(deviceDir + '/' + mac + '_' + ip + '.csv')
 
-        # csv fields
-        timeKey = statsDict['Time']
-        totalBytes = statsDict['Total Bytes']
-        delta = statsDict['Delta']
-        peak = statsDict['On-Peak']
-        offPeak = statsDict['Off-Peak']
+        if (not 'DO_NOT_LOG' in statsDict):
+            # Generate file name
+            mac = statsDict['MAC Address'].replace(':', '-')
+            ip = statsDict['IP Address']
+            fileName = str(prefix + '/devices/' + mac + '_' + ip + '.csv')
 
-        # new device, set up csv for it
-        header = False
+            # csv fields
+            timeKey = statsDict['Time']
+            totalBytes = statsDict['Total Bytes']
+            delta = statsDict['Delta']
+            peak = statsDict['On-Peak']
+            offPeak = statsDict['Off-Peak']
 
-        if (os.path.isfile(fileName) == False):
-            header = True
+            # new device, set up csv for it
+            header = False
 
-        output = open(fileName, 'a')
+            if (os.path.isfile(fileName) == False):
+                header = True
 
-        if (header):
-            output.write('Time, Total Bytes, Delta, On-Peak, Off-Peak\n')
+            output = open(fileName, 'a')
 
-        output.write('{0}, {1}, {2}, {3}, {4}\n'.format(timeKey, totalBytes, delta, peak, offPeak))
-        output.close()
+            if (header):
+                output.write('Time, Total Bytes, Delta, On-Peak, Off-Peak\n')
+
+            output.write('{0}, {1}, {2}, {3}, {4}\n'.format(timeKey, totalBytes, delta, peak, offPeak))
+            output.close()
 
 def getUserStats(deviceStatsArray, userMap):
     """ Go through the device dict array and add up all values
