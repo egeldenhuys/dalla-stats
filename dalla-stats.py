@@ -18,7 +18,7 @@ def main():
     parser.add_argument("-i", "--interval", type=int, default=0, help="the interval in seconds to update the statistics.")
     parser.add_argument("-d", "--log-directory", default='logs', help="directory to save logs")
     parser.add_argument("-l", "--enable-logging", default=False, action='store_true', help="Log statistics?")
-    parser.add_argument('-v', '--version', action='version', version='%(prog)s v0.0.4')
+    parser.add_argument('-v', '--version', action='version', version='%(prog)s v0.0.5')
 
     args = parser.parse_args()
 
@@ -207,7 +207,7 @@ def mergeDevices(oldDevices, newDevices):
     """
 
     # Go through all the old devices
-    # If it was not found in the newDevices, add it
+    # If it was not found in the newDevices, add it, and flag it
 
     tmpAdd = []
 
@@ -223,8 +223,12 @@ def mergeDevices(oldDevices, newDevices):
             tmpAdd.append(old)
 
     for add in tmpAdd:
-        #print('Device not found in new records, adding it now:')
-        #print(add)
+        # Flag this device as it was not found on the router
+        # So we do not want to add a duplicate entry in the log file
+        # This flag will only be present in the mergeDevices if not found
+        # Otherwise this flag will not be merged
+
+        add['DO_NOT_LOG'] = True
         newDevices.append(add)
 
 def initDevices(statsDictArray, timeKey):
@@ -410,31 +414,32 @@ def logDeviceStats(statsDictArray, prefix):
         i = 5
 
     for statsDict in statsDictArray:
-        # Generate file name
-        mac = statsDict['MAC Address'].replace(':', '-')
-        ip = statsDict['IP Address']
-        fileName = str(prefix + '/devices/' + mac + '_' + ip + '.csv')
+        if (not 'DO_NOT_LOG' in statsDict):
+            # Generate file name
+            mac = statsDict['MAC Address'].replace(':', '-')
+            ip = statsDict['IP Address']
+            fileName = str(prefix + '/devices/' + mac + '_' + ip + '.csv')
 
-        # csv fields
-        timeKey = statsDict['Time']
-        totalBytes = statsDict['Total Bytes']
-        delta = statsDict['Delta']
-        peak = statsDict['On-Peak']
-        offPeak = statsDict['Off-Peak']
+            # csv fields
+            timeKey = statsDict['Time']
+            totalBytes = statsDict['Total Bytes']
+            delta = statsDict['Delta']
+            peak = statsDict['On-Peak']
+            offPeak = statsDict['Off-Peak']
 
-        # new device, set up csv for it
-        header = False
+            # new device, set up csv for it
+            header = False
 
-        if (os.path.isfile(fileName) == False):
-            header = True
+            if (os.path.isfile(fileName) == False):
+                header = True
 
-        output = open(fileName, 'a')
+            output = open(fileName, 'a')
 
-        if (header):
-            output.write('Time, Total Bytes, Delta, On-Peak, Off-Peak\n')
+            if (header):
+                output.write('Time, Total Bytes, Delta, On-Peak, Off-Peak\n')
 
-        output.write('{0}, {1}, {2}, {3}, {4}\n'.format(timeKey, totalBytes, delta, peak, offPeak))
-        output.close()
+            output.write('{0}, {1}, {2}, {3}, {4}\n'.format(timeKey, totalBytes, delta, peak, offPeak))
+            output.close()
 
 def getUserStats(deviceStatsArray, userMap):
     """ Go through the device dict array and add up all values

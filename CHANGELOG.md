@@ -4,6 +4,10 @@ This project adheres to [Semantic Versioning](http://semver.org/).
 
 ## Unreleased
 
+## 0.0.5 - 2016-10-27
+### Fixed
+- Duplicate log entries when device not found on router #41
+
 ## 0.0.4 - 2016-10-25
 ### Added
 - Log timestamp to console when fetching records
