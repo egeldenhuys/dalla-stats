@@ -19,7 +19,7 @@ def main():
     parser.add_argument("-p", "--password", default='', help="the router admin password")
     parser.add_argument("-i", "--interval", type=int, default=60, help="the interval in seconds to update the statistics.")
     parser.add_argument("-d", "--root-directory", default='.', help="directory to save logs")
-    parser.add_argument("-l", "--disable-logging", default=False, action='store_true', help="Log statistics?")
+    parser.add_argument("-l", "--disable-logging", default=False, action='store_true', help="Disable logging of statistics")
     parser.add_argument('-v', '--version', action='version', version='%(prog)s ' + version)
 
     args = parser.parse_args()
@@ -30,21 +30,19 @@ def main():
 
     rootDir = args.root_directory
 
-    userMapFile = rootDir + '/user-map.csv'
-    userMap = loadUserMap(userMapFile)
+    timeKey = int(time.time())
+    #month = time.localtime(timeKey).tm_mon
+    counter = 0
 
-    logDir = rootDir + '/logs/month'
-    cacheFile = logDir + '/cache.csv'
+    month = 1
+    oldMonth = month
 
-    deviceDir = logDir + '/devices'
-    oldStats = loadDeviceCache(cacheFile)
-
-    userDir = logDir + '/users'
-
-    summaryFile = logDir + '/summary.csv'
-    totalFile = logDir + '/total.csv'
+    dirStruct = getDirStructure(rootDir, month)
+    userMap = loadUserMap(dirStruct['userMapFile'])
 
     session = initSession(args.username, args.password)
+
+    oldStats = loadDeviceCache(dirStruct['cacheFile'])
 
     delta = []
 
@@ -55,6 +53,8 @@ def main():
     while (True):
         try:
             timeKey = int(time.time())
+            # month = time.localtime(timeKey).tm_mon
+
             print('[INFO] Getting device records @ ' + str(timeKey))
 
             deviceStats = getDeviceRecords(session)
@@ -63,18 +63,26 @@ def main():
                 delta = calculateDeviceDeltas(oldStats, deviceStats)
 
                 mergeDevices(oldStats, delta)
-                saveDeviceCache(delta, cacheFile)
+
+                if (oldMonth != month):
+                    print('[INFO] We have entered a new month! Reset statistics...')
+                    dirStruct = getDirStructure(rootDir, month)
+                    # TODO: Go through each device and set on and off peak counters to delta
+
+                    oldMonth = month
+
+                saveDeviceCache(delta, dirStruct['cacheFile'])
 
                 userStats = getUserStats(delta, userMap)
                 total = getTotalStats(userStats)
-                saveSummary(userStats, total, summaryFile)
+                saveSummary(userStats, total, dirStruct['summaryFile'])
 
                 oldStats = delta
 
                 if (args.disable_logging == False):
-                    logDeviceStats(delta, deviceDir)
-                    logUserStats(userStats, userDir)
-                    logTotalStats(total, totalFile)
+                    logDeviceStats(delta, dirStruct['deviceDir'])
+                    logUserStats(userStats, dirStruct['userDir'])
+                    logTotalStats(total, dirStruct['totalFile'])
 
             if (args.interval == 0):
                 break
@@ -83,6 +91,12 @@ def main():
                 time.sleep(args.interval)
             else:
                 break
+
+            counter = counter + 1
+
+            if counter == 5:
+                month = month + 1
+                counter = 0
 
         except KeyboardInterrupt:
             print('\n[INFO] Exiting. Please wait...')
@@ -94,6 +108,19 @@ def main():
 
             print('[INFO] Logging out')
             logout(session)
+
+def getDirStructure(rootDir, month):
+    dirStruct = {}
+
+    dirStruct['userMapFile'] = rootDir + '/user-map.csv'
+    dirStruct['logDir'] = rootDir + '/logs/' + str(month)
+    dirStruct['cacheFile'] = dirStruct['logDir'] + '/cache.csv'
+    dirStruct['deviceDir'] = dirStruct['logDir'] + '/devices'
+    dirStruct['userDir'] = dirStruct['logDir'] + '/users'
+    dirStruct['summaryFile'] = dirStruct['logDir'] + '/summary.csv'
+    dirStruct['totalFile'] = dirStruct['logDir'] + '/total.csv'
+
+    return dirStruct
 
 def saveSummary(users, total, summaryFile):
     compact = True

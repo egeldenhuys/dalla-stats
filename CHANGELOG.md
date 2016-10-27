@@ -2,7 +2,9 @@
 
 This project adheres to [Semantic Versioning](http://semver.org/).
 
-## Unreleased
+## Branch
+### Added
+- Begin work to reset statistics on start of a new month #16
 
 ### Added
 
