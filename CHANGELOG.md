@@ -2,13 +2,12 @@
 
 This project adheres to [Semantic Versioning](http://semver.org/).
 
-## Unreleased
-
-<<<<<<< HEAD
+## Branch
 ### Added
+- Reset usage when a new month begins and start a new log folder #16
 
 ### Changed
-- File paths are now hard-coded in main, instead of the separate functions #15
+- File paths are now hard-coded in main, instead of in the separate functions #15
 - Change directory structure to allow monthly captures #33
 - Logging is now enabled by default
 - Default interval has been set to 60 seconds
@@ -16,11 +15,10 @@ This project adheres to [Semantic Versioning](http://semver.org/).
 
 ### Fixed
 - CRTL+C losing data while waiting for router
-=======
+
 ## 0.0.5 - 2016-10-27
 ### Fixed
 - Duplicate log entries when device not found on router #41
->>>>>>> master
 
 ## 0.0.4 - 2016-10-25
 ### Added

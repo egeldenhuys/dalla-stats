@@ -12,15 +12,16 @@ import sys
 
 def main():
     version = 'v0.0.5+dev'
+    print('[INFO] Starting Dalla-Stats ' + version)
 
     parser = argparse.ArgumentParser()
 
     parser.add_argument("-u", "--username", default='', help="the router admin username")
     parser.add_argument("-p", "--password", default='', help="the router admin password")
-    parser.add_argument("-i", "--interval", type=int, default=0, help="the interval in seconds to update the statistics.")
-    parser.add_argument("-d", "--log-directory", default='logs', help="directory to save logs")
-    parser.add_argument("-l", "--enable-logging", default=False, action='store_true', help="Log statistics?")
-    parser.add_argument('-v', '--version', action='version', version='%(prog)s v0.0.5+dev')
+    parser.add_argument("-i", "--interval", type=int, default=60, help="the interval in seconds to update the statistics.")
+    parser.add_argument("-d", "--root-directory", default='.', help="directory to save logs")
+    parser.add_argument("-l", "--disable-logging", default=False, action='store_true', help="Disable logging of statistics")
+    parser.add_argument('-v', '--version', action='version', version='%(prog)s ' + version)
 
     args = parser.parse_args()
 
@@ -28,33 +29,38 @@ def main():
         print('[ERROR] Please supply username and password')
         exit()
 
+    if (args.interval == 0):
+        print('[ERROR] Interval needs to be > 0')
+        exit()
+
     rootDir = args.root_directory
 
-    userMapFile = rootDir + '/user-map.csv'
-    userMap = loadUserMap(userMapFile)
+    # ===============
+    # Time paramaters
+    # ===============
+    timeKey = int(time.time()) # UTC TIME!
+    month = time.localtime(timeKey).tm_mon
+    year = time.localtime(timeKey).tm_year
+    datekey = str(year) + '-' + str(month)
+    oldMonth = month
 
-    logDir = rootDir + '/logs/month'
-    cacheFile = logDir + '/cache.csv'
+    dirStruct = getDirStructure(rootDir, datekey)
 
-    deviceDir = logDir + '/devices'
-    oldStats = loadDeviceCache(cacheFile)
-
-    userDir = logDir + '/users'
-
-    summaryFile = logDir + '/summary.csv'
-    totalFile = logDir + '/total.csv'
+    # Load cache and user map
+    userMap = loadUserMap(dirStruct['userMapFile'])
+    oldStats = loadDeviceCache(dirStruct['cacheFile'])
 
     session = initSession(args.username, args.password)
 
     delta = []
-
-    print('[INFO] Starting Dalla-Stats ' + version)
-
     abort = False
 
+    counter = 1
     while (True):
         try:
             timeKey = int(time.time())
+            month = time.localtime(timeKey).tm_mon
+
             print('[INFO] Getting device records @ ' + str(timeKey))
 
             deviceStats = getDeviceRecords(session)
@@ -63,21 +69,30 @@ def main():
                 delta = calculateDeviceDeltas(oldStats, deviceStats)
 
                 mergeDevices(oldStats, delta)
-                saveDeviceCache(delta, cacheFile)
+
+                if (oldMonth != month):
+                    print('[INFO] We have entered a new month! Reset statistics...')
+                    year = time.localtime(timeKey).tm_year
+                    oldMonth = month
+
+                    dateKey = str(year) + '-' + str(month)
+                    dirStruct = getDirStructure(rootDir, dateKey)
+
+                    resetDevices(delta)
+
+
+                saveDeviceCache(delta, dirStruct['cacheFile'])
 
                 userStats = getUserStats(delta, userMap)
                 total = getTotalStats(userStats)
-                saveSummary(userStats, total, summaryFile)
+                saveSummary(userStats, total, dirStruct['summaryFile'])
 
                 oldStats = delta
 
                 if (args.disable_logging == False):
-                    logDeviceStats(delta, deviceDir)
-                    logUserStats(userStats, userDir)
-                    logTotalStats(total, totalFile)
-
-            if (args.interval == 0):
-                break
+                    logDeviceStats(delta, dirStruct['deviceDir'])
+                    logUserStats(userStats, dirStruct['userDir'])
+                    logTotalStats(total, dirStruct['totalFile'])
 
             if (abort == False):
                 time.sleep(args.interval)
@@ -88,12 +103,29 @@ def main():
             print('\n[INFO] Exiting. Please wait...')
             time.sleep(1)
             abort = True
-        except:
-            print('[ERROR] Unexpected exception!')
-            print(sys.exc_info()[0])
 
-            print('[INFO] Logging out')
-            logout(session)
+def resetDevices(devicesArray):
+    # Go through each device and set on and off peak counters to delta
+
+    for device in devicesArray:
+        device['On-Peak'] = 0
+        device['Off-Peak'] = 0
+        classifyDelta(device)
+
+
+def getDirStructure(rootDir, dateKey):
+    dirStruct = {}
+
+
+    dirStruct['userMapFile'] = rootDir + '/user-map.csv'
+    dirStruct['logDir'] = rootDir + '/logs/' + str(dateKey)
+    dirStruct['cacheFile'] = dirStruct['logDir'] + '/cache.csv'
+    dirStruct['deviceDir'] = dirStruct['logDir'] + '/devices'
+    dirStruct['userDir'] = dirStruct['logDir'] + '/users'
+    dirStruct['summaryFile'] = dirStruct['logDir'] + '/summary.csv'
+    dirStruct['totalFile'] = dirStruct['logDir'] + '/total.csv'
+
+    return dirStruct
 
 def saveSummary(users, total, summaryFile):
     compact = True
@@ -178,6 +210,9 @@ def loadDeviceCache(cacheFile):
             deviceStats.append(tmpDevice)
 
     inputFile.close()
+
+    print('[INFO] Device cache has been loaded from "{0}"'.format(cacheFile))
+
     return deviceStats
 
 def mergeDevices(oldDevices, newDevices):
@@ -397,7 +432,7 @@ def logDeviceStats(statsDictArray, deviceDir):
             # Generate file name
             mac = statsDict['MAC Address'].replace(':', '-')
             ip = statsDict['IP Address']
-            fileName = str(prefix + '/devices/' + mac + '_' + ip + '.csv')
+            fileName = str(deviceDir + '/' + mac + '_' + ip + '.csv')
 
             # csv fields
             timeKey = statsDict['Time']
@@ -616,14 +651,16 @@ def loadUserMap(userMapFile):
     if (os.path.isfile(userMapFile) == False):
         return userMap
 
-    userMapFile = open(userMapFile)
-    reader = csv.reader(userMapFile, delimiter=',', skipinitialspace=True)
+    inputFile = open(userMapFile)
+    reader = csv.reader(inputFile, delimiter=',', skipinitialspace=True)
 
     for row in reader:
         if (reader.line_num != 1):
             userMap[row[1]] = row[0]
 
-    userMapFile.close()
+    inputFile.close()
+
+    print('[INFO] User-Map has been loaded from "' + userMapFile + '"')
 
     return userMap
 
