@@ -4,6 +4,10 @@ This project adheres to [Semantic Versioning](http://semver.org/).
 
 ## Unreleased
 
+## v0.1.2 - 2016-10-29
+## Fixed
+- Day will now increment refresh when it is a new day
+
 ## v0.1.1 - 2016-10-29
 ### Fixed
 - Will now reset the daily statistics when a new day starts

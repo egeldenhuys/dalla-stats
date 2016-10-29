@@ -10,7 +10,7 @@ import datetime
 import logging
 import sys
 
-version = 'v0.1.1'
+version = 'v0.1.2'
 
 def main():
 
@@ -42,12 +42,15 @@ def main():
     # ===============
     timeKey = int(time.time()) # UTC TIME!
     localTime = time.localtime(timeKey)
+
     month = localTime.tm_mon
     oldMonth = month
-    year = localTime.tm_year
+
 
     day = localTime.tm_mday
     oldDay = day
+
+    year = localTime.tm_year
 
     datekey = str(year) + '-' + str(month)
 
@@ -67,11 +70,9 @@ def main():
     while (True):
         try:
             timeKey = int(time.time())
-
             localTime = time.localtime(timeKey)
-            print(localTime.tm_hour)
             month = localTime.tm_mon
-            # day = localTime.tm_mday
+            day = localTime.tm_mday
 
             print('[INFO] Getting device records @ ' + str(timeKey))
 
@@ -345,8 +346,6 @@ def getDeviceRecords(session, timeKey):
     Delta
     """
 
-    #timeKey = int(time.time())
-
     # Configure page specific headers
     url = 'http://192.168.1.1/cgi?1&5'
     session.headers.update({'Referer': 'http://192.168.1.1/mainFrame.htm'})
@@ -560,8 +559,13 @@ def getUserStats(deviceStatsArray, userMap, timeKey):
         mac = deviceDict['MAC Address']
         ip = deviceDict['IP Address']
 
-        # if (deviceDict['Time'] != timeKey):
-        #     print('[INFO] Time key mismatch! (getUserStats)')
+        if (deviceDict['Time'] != timeKey and (not 'DO_NOT_LOG' in deviceDict)):
+            print('==================================================')
+            print('[ERROR] Time key mismatch while getting user stats:')
+            print('--------------------------------------------------')
+            print('Given timeKey = {0}'.format(timeKey))
+            print('Device timeKey = {0}'.format(deviceDict['Time']))
+            print('--------------------------------------------------')
 
         # Use usermap to determine to who this mac beints
         if (mac in userMap):
