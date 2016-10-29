@@ -10,7 +10,7 @@ import datetime
 import logging
 import sys
 
-version = 'v0.1.0'
+version = 'v0.1.1'
 
 def main():
 
@@ -41,10 +41,15 @@ def main():
     # Time paramaters
     # ===============
     timeKey = int(time.time()) # UTC TIME!
-    month = time.localtime(timeKey).tm_mon
-    year = time.localtime(timeKey).tm_year
-    datekey = str(year) + '-' + str(month)
+    localTime = time.localtime(timeKey)
+    month = localTime.tm_mon
     oldMonth = month
+    year = localTime.tm_year
+
+    day = localTime.tm_mday
+    oldDay = day
+
+    datekey = str(year) + '-' + str(month)
 
     dirStruct = getDirStructure(rootDir, datekey)
 
@@ -59,23 +64,32 @@ def main():
     delta = []
     abort = False
 
-    counter = 1
     while (True):
         try:
             timeKey = int(time.time())
-            month = time.localtime(timeKey).tm_mon
+
+            localTime = time.localtime(timeKey)
+            print(localTime.tm_hour)
+            month = localTime.tm_mon
+            # day = localTime.tm_mday
 
             print('[INFO] Getting device records @ ' + str(timeKey))
 
-            deviceStats = getDeviceRecords(session)
+            deviceStats = getDeviceRecords(session, timeKey)
 
             if (len(deviceStats) != 0):
                 delta = calculateDeviceDeltas(oldStats, deviceStats)
 
                 mergeDevices(oldStats, delta)
 
+                if (oldDay != day):
+                    print('[INFO] We have entered a new day! Resetting daily statistics...')
+                    oldDay = day
+
+                    resetDevices(userUsageToday)
+
                 if (oldMonth != month):
-                    print('[INFO] We have entered a new month! Reset statistics...')
+                    print('[INFO] We have entered a new month! Resetting all statistics...')
                     year = time.localtime(timeKey).tm_year
                     oldMonth = month
 
@@ -87,7 +101,7 @@ def main():
 
                 saveDeviceCache(delta, dirStruct['cacheFile'])
 
-                userStats = getUserStats(delta, userMap)
+                userStats = getUserStats(delta, userMap, timeKey)
                 total = getTotalStats(userStats)
                 saveSummary(userStats, total, dirStruct['summaryFile'], 'html', 'Total')
 
@@ -124,7 +138,6 @@ def resetDevices(devicesArray):
         device['On-Peak'] = 0
         device['Off-Peak'] = 0
         classifyDelta(device)
-
 
 def getDirStructure(rootDir, dateKey):
     dirStruct = {}
@@ -184,7 +197,10 @@ def saveSummary(users, total, summaryFile, mode='csv', title='Today'):
         overviewFile.write('<p style="font-family:courier, monospace;">\n')
         overviewFile.write('version: ' + version + '<br>\n\n')
 
-        overviewFile.write(time.strftime('%c'))
+        timeKey = int(time.time())
+        localTime = time.localtime(timeKey)
+        overviewFile.write(time.strftime('%c', localTime))
+
         overviewFile.write('<br>\n<br>\n')
 
         overviewFile.write('=======<br>\nTOTAL<br>\n=======<br>\n')
@@ -322,14 +338,14 @@ def initDevices(statsDictArray, timeKey):
     return newDictArray
 
 
-def getDeviceRecords(session):
+def getDeviceRecords(session, timeKey):
     """ Poll the router for the current device statistics
 
     These records need to be compared to a previous set to calculate the
     Delta
     """
 
-    timeKey = int(time.time())
+    #timeKey = int(time.time())
 
     # Configure page specific headers
     url = 'http://192.168.1.1/cgi?1&5'
@@ -518,12 +534,12 @@ def logDeviceStats(statsDictArray, deviceDir):
             output.write('{0}, {1}, {2}, {3}, {4}\n'.format(timeKey, totalBytes, delta, peak, offPeak))
             output.close()
 
-def getUserStats(deviceStatsArray, userMap):
+def getUserStats(deviceStatsArray, userMap, timeKey):
     """ Go through the device dict array and add up all values
     that belong to each user
     """
 
-    timeKey = int(time.time())
+    #timeKey = int(time.time())
 
     userStatsArray = []
 

@@ -4,6 +4,10 @@ This project adheres to [Semantic Versioning](http://semver.org/).
 
 ## Unreleased
 
+## v0.1.1 - 2016-10-29
+### Fixed
+- Will now reset the daily statistics when a new day starts
+
 ## v0.1.0 - 2016-10-29
 ### Added
 - Reset usage when a new month begins and start a new log folder #16
