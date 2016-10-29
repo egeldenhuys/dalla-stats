@@ -6,6 +6,7 @@ This project adheres to [Semantic Versioning](http://semver.org/).
 ### Added
 - Reset usage when a new month begins and start a new log folder #16
 - Reset byte buffer when device not found on router #30
+- Produces HTML Total, and Today pages #36, #24, #17
 
 ### Changed
 - File paths are now hard-coded in main, instead of in the separate functions #15
