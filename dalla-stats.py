@@ -10,7 +10,7 @@ import datetime
 import logging
 import sys
 
-version = 'v0.0.5+dev'
+version = 'v0.1.0'
 
 def main():
 
