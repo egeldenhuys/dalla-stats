@@ -189,8 +189,6 @@ def saveSummary(users, summaryFile, mode='csv', title='Today'):
     elif (title == "Today"):
 
         maxOn = ((float(400) / totalDays) / userCount) * 1073741824
-        print(maxOn)
-        #maxOn = float(400 * 1024 * 1024 * 1204) / totalDays / userCount
         maxOff = float(1000 * 1073741824) / totalDays / userCount
 
     if not os.path.exists(os.path.dirname(summaryFile)):
