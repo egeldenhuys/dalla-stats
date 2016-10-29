@@ -9,6 +9,7 @@ import csv
 import datetime
 import logging
 import sys
+import calendar
 
 version = 'v0.1.2+dev'
 
@@ -118,6 +119,7 @@ def main():
                 else:
                     userUsageToday = addDeltaToUserUsageToday(userStats, userUsageToday)
 
+                calculateTotalUsageToday(userUsageToday)
                 sortUsers(userUsageToday)
                 saveSummary(userUsageToday, dirStruct['todayFile'], 'html', 'Today')
 
@@ -167,6 +169,30 @@ def saveSummary(users, summaryFile, mode='csv', title='Today'):
     scaleStr = 'MiB'
     points = 2
 
+    timeKey = int(time.time()) # UTC TIME!
+    localTime = time.localtime(timeKey)
+
+    year = localTime.tm_year
+    month = localTime.tm_mon
+
+    totalDays = calendar.monthrange(year, month)[1]
+
+    maxOn = -1
+    maxOff = -1
+
+    userCount = 10
+
+    # Bytes
+    if (title == "Total"):
+        maxOn = float(400 * 1073741824) / userCount
+        maxOff = float(1000 * 1073741824) / userCount
+    elif (title == "Today"):
+
+        maxOn = ((float(400) / totalDays) / userCount) * 1073741824
+        print(maxOn)
+        #maxOn = float(400 * 1024 * 1024 * 1204) / totalDays / userCount
+        maxOff = float(1000 * 1073741824) / totalDays / userCount
+
     if not os.path.exists(os.path.dirname(summaryFile)):
         os.makedirs(os.path.dirname(summaryFile))
 
@@ -197,17 +223,30 @@ def saveSummary(users, summaryFile, mode='csv', title='Today'):
         overviewFile.write('<p style="font-family:courier, monospace;">\n')
         overviewFile.write('version: ' + version + '<br>\n\n')
 
-        timeKey = int(time.time())
-        localTime = time.localtime(timeKey)
         overviewFile.write(time.strftime('%c', localTime))
 
         overviewFile.write('<br>\n<br>\n')
 
         for userDict in users:
+
+            total = userDict['On-Peak'] + userDict['Off-Peak']
+            onPeak = userDict['On-Peak']
+            offPeak = userDict['Off-Peak']
+
+            if (userDict['Name'] == 'TOTAL'):
+                onPerc = round((float(onPeak) / (maxOn * userCount)) * 100, 2)
+                offPerc = round((float(offPeak) / (maxOff * userCount)) * 100, 2)
+            else:
+                onPerc = round(float(onPeak) / maxOn)
+                onPerc = round((float(onPeak) / maxOn) * 100, 2)
+                offPerc = round((float(offPeak) / maxOff) * 100, 2)
+
             overviewFile.write('=======<br>\n' + userDict['Name'] + "<br>\n=======<br>\n")
-            overviewFile.write('Total    : ' + str(round((userDict['On-Peak'] + userDict['Off-Peak']) * scale, points)) + ' ' + scaleStr + '<br>\n')
-            overviewFile.write('On-Peak  : ' + str(round(userDict['On-Peak'] * scale, points)) + ' ' + scaleStr + '<br>\n')
-            overviewFile.write('Off-Peak : ' + str(round(userDict['Off-Peak'] * scale, points)) + ' ' + scaleStr + '<br>\n<br>\n')
+            overviewFile.write('Total    : ' + str(round(total * scale, points)) + ' ' + scaleStr + '<br>\n')
+            overviewFile.write('On-Peak  : ' + str(round(onPeak * scale, points)) + ' ' + scaleStr)
+            overviewFile.write(' (' + str(onPerc) + '%)<br>\n')
+            overviewFile.write('Off-Peak : ' + str(round(offPeak * scale, points)) + ' ' + scaleStr)
+            overviewFile.write(' (' + str(offPerc) + '%)<br>\n<br>\n')
 
         overviewFile.write('</p>\n</body>\n</html>')
 
@@ -824,7 +863,7 @@ def getUserUsageToday_PLOT_OLD(userDir):
 
     return userArray
 
-def getTotalUsageToday_DEPRECATED(userUsageToday):
+def calculateTotalUsageToday(userUsageToday):
     total = {}
     total['On-Peak'] = 0
     total['Off-Peak'] = 0
@@ -834,7 +873,10 @@ def getTotalUsageToday_DEPRECATED(userUsageToday):
             total['On-Peak'] = total['On-Peak'] + u['On-Peak']
             total['Off-Peak'] = total['Off-Peak'] + u['Off-Peak']
 
-    return total
+    for u in userUsageToday:
+        if (u['Name'] == 'TOTAL'):
+            u['On-Peak'] = total['On-Peak']
+            u['Off-Peak'] = total['Off-Peak']
 
 def loadUserUsageToday(userDir):
     """
