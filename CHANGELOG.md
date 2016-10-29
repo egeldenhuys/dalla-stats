@@ -4,6 +4,15 @@ This project adheres to [Semantic Versioning](http://semver.org/).
 
 ## Unreleased
 
+### Added
+- Summary is now ranked from highest to lowest total usage
+
+### Changed
+- TOTAL is now a user. getTotal..() functions ahve been deprecated.
+
+### Fixed
+- Daily usage will now be correct on first run.
+
 ## v0.1.2 - 2016-10-29
 ## Fixed
 - Day will now increment refresh when it is a new day

@@ -10,7 +10,7 @@ import datetime
 import logging
 import sys
 
-version = 'v0.1.2'
+version = 'v0.1.2+dev'
 
 def main():
 
@@ -99,23 +99,29 @@ def main():
 
                     resetDevices(delta)
 
-
                 saveDeviceCache(delta, dirStruct['cacheFile'])
 
                 userStats = getUserStats(delta, userMap, timeKey)
-                total = getTotalStats(userStats)
-                saveSummary(userStats, total, dirStruct['summaryFile'], 'html', 'Total')
+                sortUsers(userStats)
 
-                userUsageToday = addDeltaToUserUsageToday(userStats, userUsageToday)
-                totalToday = getTotalUsageToday(userUsageToday)
-                saveSummary(userUsageToday, totalToday, dirStruct['todayFile'], 'html', 'Today')
-
-                oldStats = delta
+                saveSummary(userStats, dirStruct['summaryFile'], 'html', 'Total')
 
                 if (args.disable_logging == False):
                     logDeviceStats(delta, dirStruct['deviceDir'])
                     logUserStats(userStats, dirStruct['userDir'])
-                    logTotalStats(total, dirStruct['totalFile'])
+
+                # First run, we cannot safely say how much users have used today.
+                # So set their usage to 0
+                if (len(userUsageToday) == 0):
+                    resetDevices(userStats)
+                    userUsageToday = loadUserUsageToday(dirStruct['userDir'])
+                else:
+                    userUsageToday = addDeltaToUserUsageToday(userStats, userUsageToday)
+
+                sortUsers(userUsageToday)
+                saveSummary(userUsageToday, dirStruct['todayFile'], 'html', 'Today')
+
+                oldStats = delta
 
             else:
                 # Getting records fail, try to logout
@@ -155,7 +161,7 @@ def getDirStructure(rootDir, dateKey):
 
     return dirStruct
 
-def saveSummary(users, total, summaryFile, mode='csv', title='Today'):
+def saveSummary(users, summaryFile, mode='csv', title='Today'):
 
     scale = 0.000000954
     scaleStr = 'MiB'
@@ -170,19 +176,12 @@ def saveSummary(users, total, summaryFile, mode='csv', title='Today'):
 
     if (mode == 'csv'):
         overviewFile.write('Name, Total, On-Peak, Off-Peak\n')
-        overviewFile.write('TOTAL, ' + str(total['On-Peak'] + total['Off-Peak']) + ', ' + str(total['On-Peak']) + ', ' + str(total['Off-Peak']) + '\n')
 
         for userDict in users:
             overviewFile.write(userDict['Name'] + ', ' + str(userDict['On-Peak'] +
             userDict['Off-Peak']) + ', ' + str(userDict['On-Peak']) + ', ' + str(userDict['Off-Peak']) + '\n')
 
     elif (mode == 'txt'):
-        overviewFile.write('=======\nTOTAL\n=======\n')
-        overviewFile.write('Total    : ' + str((total['On-Peak'] + total['Off-Peak']) * scale) + ' ' + scaleStr + '\n')
-        overviewFile.write('On-Peak  : ' + str(total['On-Peak'] * scale) + ' ' + scaleStr + '\n')
-        overviewFile.write('Off-Peak : ' + str(total['Off-Peak'] * scale) + ' ' + scaleStr + '\n\n')
-
-        overviewFile.write('=======\nUSERS\n=======\n')
 
         for userDict in users:
             overviewFile.write('--------\n' + userDict['Name'] + "\n--------\n")
@@ -203,11 +202,6 @@ def saveSummary(users, total, summaryFile, mode='csv', title='Today'):
         overviewFile.write(time.strftime('%c', localTime))
 
         overviewFile.write('<br>\n<br>\n')
-
-        overviewFile.write('=======<br>\nTOTAL<br>\n=======<br>\n')
-        overviewFile.write('Total    : ' + str(round((total['On-Peak'] + total['Off-Peak']) * scale, points)) + ' ' + scaleStr + '<br>\n')
-        overviewFile.write('On-Peak  : ' + str(round(total['On-Peak'] * scale, points)) + ' ' + scaleStr + '<br>\n')
-        overviewFile.write('Off-Peak : ' + str(round(total['Off-Peak'] * scale, points)) + ' ' + scaleStr + '<br>\n<br>\n')
 
         for userDict in users:
             overviewFile.write('=======<br>\n' + userDict['Name'] + "<br>\n=======<br>\n")
@@ -533,6 +527,12 @@ def logDeviceStats(statsDictArray, deviceDir):
             output.write('{0}, {1}, {2}, {3}, {4}\n'.format(timeKey, totalBytes, delta, peak, offPeak))
             output.close()
 
+def addToUser(src, dst):
+    dst['Total Bytes'] += src['Total Bytes']
+    dst['Delta'] += src['Delta']
+    dst['On-Peak'] += src['On-Peak']
+    dst['Off-Peak'] += src['Off-Peak']
+
 def getUserStats(deviceStatsArray, userMap, timeKey):
     """ Go through the device dict array and add up all values
     that belong to each user
@@ -542,16 +542,22 @@ def getUserStats(deviceStatsArray, userMap, timeKey):
 
     userStatsArray = []
 
-    # Create the default user
+    # Create the default user 0
     unknownUser = {}
-    unknownUser['Name'] = 'Unknown'
+    unknownUser['Name'] = 'UNKNOWN'
     unknownUser['Time'] = timeKey
     unknownUser['Total Bytes'] = 0
     unknownUser['Delta'] = 0
     unknownUser['On-Peak'] = 0
     unknownUser['Off-Peak'] = 0
 
-    userStatsArray.append(unknownUser)
+    totalUser = {}
+    totalUser['Name'] = 'TOTAL'
+    totalUser['Time'] = timeKey
+    totalUser['Total Bytes'] = 0
+    totalUser['Delta'] = 0
+    totalUser['On-Peak'] = 0
+    totalUser['Off-Peak'] = 0
 
     # Open each device and determine to who it beints
     for deviceDict in deviceStatsArray:
@@ -580,6 +586,7 @@ def getUserStats(deviceStatsArray, userMap, timeKey):
                     user['On-Peak'] += deviceDict['On-Peak']
                     user['Off-Peak'] += deviceDict['Off-Peak']
                     found = True
+                    break
 
             # If we have not seen this user before, create the user and set the values
             if (found == False):
@@ -594,10 +601,12 @@ def getUserStats(deviceStatsArray, userMap, timeKey):
 
         # if the mac was not found the the userMap, add it to Unknown user
         else:
-            userStatsArray[0]['Total Bytes'] += deviceDict['Total Bytes']
-            userStatsArray[0]['Delta'] += deviceDict['Delta']
-            userStatsArray[0]['On-Peak'] += deviceDict['On-Peak']
-            userStatsArray[0]['Off-Peak'] += deviceDict['Off-Peak']
+            addToUser(deviceDict, unknownUser)
+
+        addToUser(deviceDict, totalUser)
+
+    userStatsArray.append(totalUser)
+    userStatsArray.append(unknownUser)
 
     return userStatsArray
 
@@ -624,7 +633,7 @@ def logUserStats(userStatsArray, userDir):
         usercsv.write('{0}, {1}, {2}, {3}, {4}\n'.format(user['Time'], user['Total Bytes'], user['Delta'], user['On-Peak'], user['Off-Peak']))
         usercsv.close()
 
-def getTotalStats(userStats):
+def getTotalStats_DEPRECATED(userStats):
     """
     Loop through all user dicts and add their last value to total
     """
@@ -642,11 +651,11 @@ def getTotalStats(userStats):
 
         # if (userDict['Time'] != timeKey):
         #     print('[WARN] Time key mismatch! (getTotalStats)')
-
-        total['Total Bytes'] += userDict['Total Bytes']
-        total['Delta'] += userDict['Delta']
-        total['On-Peak'] += userDict['On-Peak']
-        total['Off-Peak'] += userDict['Off-Peak']
+        if (userDict['Name'] != 'TOTAL'):
+            total['Total Bytes'] += userDict['Total Bytes']
+            total['Delta'] += userDict['Delta']
+            total['On-Peak'] += userDict['On-Peak']
+            total['Off-Peak'] += userDict['Off-Peak']
 
     return total
 
@@ -815,14 +824,15 @@ def getUserUsageToday_PLOT_OLD(userDir):
 
     return userArray
 
-def getTotalUsageToday(userUsageToday):
+def getTotalUsageToday_DEPRECATED(userUsageToday):
     total = {}
     total['On-Peak'] = 0
     total['Off-Peak'] = 0
 
     for u in userUsageToday:
-        total['On-Peak'] = total['On-Peak'] + u['On-Peak']
-        total['Off-Peak'] = total['Off-Peak'] + u['Off-Peak']
+        if (u['Name'] != 'TOTAL'):
+            total['On-Peak'] = total['On-Peak'] + u['On-Peak']
+            total['Off-Peak'] = total['Off-Peak'] + u['Off-Peak']
 
     return total
 
@@ -931,15 +941,28 @@ def addDeltaToUserUsageToday(currentUsers, userUsageToday):
             print('[INFO] Adding new user to Daily Usage Records')
 
             userToday = userDelta.copy()
+
+            userToday['On-Peak'] = 0
+            userToday['Off-Peak'] = 0
             classifyDelta(userToday)
+
             userUsageToday.append(userToday)
 
             print(userToday)
 
             print('---------------------------------------------\n')
 
-
-
     return userUsageToday
+
+def sortUsers(users):
+
+    # take a user from the array
+    for j in range(0, len(users)):
+        for i in range(0, len(users) - 1):
+            if (users[i]['On-Peak'] + users[i]['Off-Peak'] < users[i + 1]['On-Peak'] + users[i + 1]['Off-Peak']):
+                # swap
+                tmp = users[i]
+                users[i] = users[i + 1]
+                users[i + 1] = tmp
 
 main()
