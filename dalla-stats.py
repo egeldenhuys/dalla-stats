@@ -11,7 +11,7 @@ import logging
 import sys
 import calendar
 
-version = 'v0.1.2+dev'
+version = 'v0.1.2+dev.1'
 
 def main():
 
