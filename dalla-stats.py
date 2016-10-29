@@ -93,6 +93,10 @@ def main():
                     logDeviceStats(delta, dirStruct['deviceDir'])
                     logUserStats(userStats, dirStruct['userDir'])
                     logTotalStats(total, dirStruct['totalFile'])
+            else:
+                # Getting records fail, try to logout
+                # REVIEW: Does this work when timout occurs
+                logout(session)
 
             if (abort == False):
                 time.sleep(args.interval)
@@ -236,13 +240,24 @@ def mergeDevices(oldDevices, newDevices):
         if (found == False):
             tmpAdd.append(old)
 
+    # Go through each device record that not longer exists on the router
     for add in tmpAdd:
-        # Flag this device as it was not found on the router
-        # So we do not want to add a duplicate entry in the log file
-        # This flag will only be present in the mergeDevices if not found
-        # Otherwise this flag will not be merged
+        if (not 'DO_NOT_LOG' in add):
+            # Flag this device as it was not found on the router
+            # So we do not want to add a duplicate entry in the log file
+            # This flag will only be present in the mergeDevices if not found
+            # Otherwise this flag will not be merged
+            add['DO_NOT_LOG'] = True
 
-        add['DO_NOT_LOG'] = True
+            # CHANGED: Reset byte buffer when device has been removed from router
+            add['Total Bytes'] = 0
+            print('=========================================================')
+            print('[WARN] Device was not found on router. Reset Total Bytes:')
+            print('---------------------------------------------------------')
+            print(add)
+            print('---------------------------------------------------------')
+            print('')
+
         newDevices.append(add)
 
 def initDevices(statsDictArray, timeKey):
@@ -395,17 +410,27 @@ def calculateDeviceDeltas(oldDeviceDeltas, currentDeviceRecords):
                     newDeviceDict['Delta'] = newDeviceDict['Total Bytes'] - oldDeviceDict['Total Bytes']
 
                     if (newDeviceDict['Delta'] < 0):
-                        print(str(datetime.datetime.now()) + ' [WARN] Device has negative delta! Fixing...')
+                        print('=================================')
+                        print('[WARN] Device has negative delta!')
+                        print('Delta = ' + str(newDeviceDict['Delta']))
+                        print('---------------------------------')
                         newDeviceDict['Delta'] = newDeviceDict['Total Bytes']
-
+                        print('-----------')
+                        print('Old record:')
+                        print('-----------')
                         print(oldDeviceDict)
+                        print('-----------')
+                        print('New record:')
+                        print('-----------')
+                        print(newDeviceDict)
+                        print('---------------------------------')
                         print('')
 
                     classifyDelta(newDeviceDict)
 
         # No matching old dict was found
         if (found == False):
-            print('[INFO] New device found. Initializing records:')
+            print('[INFO] New device found:')
 
             newDeviceDict['Delta'] = newDeviceDict['Total Bytes']
             classifyDelta(newDeviceDict)
@@ -682,6 +707,7 @@ def logout(session):
 
     if (r.text != '[cgi]0\n[error]0'):
         print('[ERROR] Logout failed:')
+
         if (r.text == '<html><head><title>500 Internal Server Error</title></head><body><center><h1>500 Internal Server Error</h1></center></body></html>'):
             print('\t Another admin has logged in!')
         else:

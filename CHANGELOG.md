@@ -2,19 +2,23 @@
 
 This project adheres to [Semantic Versioning](http://semver.org/).
 
-## Branch
+## Unreleased
 ### Added
 - Reset usage when a new month begins and start a new log folder #16
+- Reset byte buffer when device not found on router #30
 
 ### Changed
 - File paths are now hard-coded in main, instead of in the separate functions #15
+- Detailed log when negative delta #28
 - Change directory structure to allow monthly captures #33
 - Logging is now enabled by default
 - Default interval has been set to 60 seconds
 - --interval, --root-directory and --disable-logging are now optional
+- Better WARN log style
 
 ### Fixed
 - CRTL+C losing data while waiting for router
+- Not logging out when failling to get records from router #44
 
 ## 0.0.5 - 2016-10-27
 ### Fixed
