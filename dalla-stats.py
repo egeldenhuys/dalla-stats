@@ -10,8 +10,10 @@ import datetime
 import logging
 import sys
 
+version = 'v0.0.5+dev'
+
 def main():
-    version = 'v0.0.5+dev'
+
     print('[INFO] Starting Dalla-Stats ' + version)
 
     parser = argparse.ArgumentParser()
@@ -50,6 +52,8 @@ def main():
     userMap = loadUserMap(dirStruct['userMapFile'])
     oldStats = loadDeviceCache(dirStruct['cacheFile'])
 
+    userUsageToday = loadUserUsageToday(dirStruct['userDir'])
+
     session = initSession(args.username, args.password)
 
     delta = []
@@ -85,7 +89,11 @@ def main():
 
                 userStats = getUserStats(delta, userMap)
                 total = getTotalStats(userStats)
-                saveSummary(userStats, total, dirStruct['summaryFile'])
+                saveSummary(userStats, total, dirStruct['summaryFile'], 'html', 'Total')
+
+                userUsageToday = addDeltaToUserUsageToday(userStats, userUsageToday)
+                totalToday = getTotalUsageToday(userUsageToday)
+                saveSummary(userUsageToday, totalToday, dirStruct['todayFile'], 'html', 'Today')
 
                 oldStats = delta
 
@@ -93,6 +101,7 @@ def main():
                     logDeviceStats(delta, dirStruct['deviceDir'])
                     logUserStats(userStats, dirStruct['userDir'])
                     logTotalStats(total, dirStruct['totalFile'])
+
             else:
                 # Getting records fail, try to logout
                 # REVIEW: Does this work when timout occurs
@@ -120,19 +129,23 @@ def resetDevices(devicesArray):
 def getDirStructure(rootDir, dateKey):
     dirStruct = {}
 
-
+    dirStruct['rootDir'] = rootDir
     dirStruct['userMapFile'] = rootDir + '/user-map.csv'
     dirStruct['logDir'] = rootDir + '/logs/' + str(dateKey)
     dirStruct['cacheFile'] = dirStruct['logDir'] + '/cache.csv'
     dirStruct['deviceDir'] = dirStruct['logDir'] + '/devices'
     dirStruct['userDir'] = dirStruct['logDir'] + '/users'
-    dirStruct['summaryFile'] = dirStruct['logDir'] + '/summary.csv'
+    dirStruct['summaryFile'] = dirStruct['logDir'] + '/total.html'
     dirStruct['totalFile'] = dirStruct['logDir'] + '/total.csv'
+    dirStruct['todayFile'] = dirStruct['logDir'] + '/index.html'
 
     return dirStruct
 
-def saveSummary(users, total, summaryFile):
-    compact = True
+def saveSummary(users, total, summaryFile, mode='csv', title='Today'):
+
+    scale = 0.000000954
+    scaleStr = 'MiB'
+    points = 2
 
     if not os.path.exists(os.path.dirname(summaryFile)):
         os.makedirs(os.path.dirname(summaryFile))
@@ -141,27 +154,51 @@ def saveSummary(users, total, summaryFile):
 
     # TODO: Sort users based on actual total
 
-    if (compact == True):
+    if (mode == 'csv'):
         overviewFile.write('Name, Total, On-Peak, Off-Peak\n')
         overviewFile.write('TOTAL, ' + str(total['On-Peak'] + total['Off-Peak']) + ', ' + str(total['On-Peak']) + ', ' + str(total['Off-Peak']) + '\n')
 
         for userDict in users:
             overviewFile.write(userDict['Name'] + ', ' + str(userDict['On-Peak'] +
             userDict['Off-Peak']) + ', ' + str(userDict['On-Peak']) + ', ' + str(userDict['Off-Peak']) + '\n')
-    else:
 
+    elif (mode == 'txt'):
         overviewFile.write('=======\nTOTAL\n=======\n')
-        overviewFile.write('Total    : ' + str(total['On-Peak'] + total['Off-Peak']) + '\n')
-        overviewFile.write('On-Peak  : ' + str(total['On-Peak']) + '\n')
-        overviewFile.write('Off-Peak : ' + str(total['Off-Peak']) + '\n')
+        overviewFile.write('Total    : ' + str((total['On-Peak'] + total['Off-Peak']) * scale) + ' ' + scaleStr + '\n')
+        overviewFile.write('On-Peak  : ' + str(total['On-Peak'] * scale) + ' ' + scaleStr + '\n')
+        overviewFile.write('Off-Peak : ' + str(total['Off-Peak'] * scale) + ' ' + scaleStr + '\n\n')
 
         overviewFile.write('=======\nUSERS\n=======\n')
 
         for userDict in users:
             overviewFile.write('--------\n' + userDict['Name'] + "\n--------\n")
-            overviewFile.write('Total    : ' + str(userDict['On-Peak'] + userDict['Off-Peak']) + '\n')
-            overviewFile.write('On-Peak  : ' + str(userDict['On-Peak']) + '\n')
-            overviewFile.write('Off-Peak : ' + str(userDict['Off-Peak']) + '\n\n')
+            overviewFile.write('Total    : ' + str((userDict['On-Peak'] + userDict['Off-Peak']) * scale) + ' ' + scaleStr + '\n')
+            overviewFile.write('On-Peak  : ' + str(userDict['On-Peak'] * scale) + ' ' + scaleStr + '\n')
+            overviewFile.write('Off-Peak : ' + str(userDict['Off-Peak'] * scale) + ' ' + scaleStr + '\n\n')
+    elif (mode == 'html'):
+        overviewFile.write('<!DOCTYPE html>\n<html>\n<head><title>Dalla Stats</title></head>\n<body>\n')
+
+        overviewFile.write('<h1>' + title + '</h1>\n')
+        overviewFile.write("<a href=/index.html>Today</a><br>\n<br>\n")
+        overviewFile.write("<a href=/total.html>Total</a><br>\n")
+        overviewFile.write('<p style="font-family:courier, monospace;">\n')
+        overviewFile.write('version: ' + version + '<br>\n\n')
+
+        overviewFile.write(time.strftime('%c'))
+        overviewFile.write('<br>\n<br>\n')
+
+        overviewFile.write('=======<br>\nTOTAL<br>\n=======<br>\n')
+        overviewFile.write('Total    : ' + str(round((total['On-Peak'] + total['Off-Peak']) * scale, points)) + ' ' + scaleStr + '<br>\n')
+        overviewFile.write('On-Peak  : ' + str(round(total['On-Peak'] * scale, points)) + ' ' + scaleStr + '<br>\n')
+        overviewFile.write('Off-Peak : ' + str(round(total['Off-Peak'] * scale, points)) + ' ' + scaleStr + '<br>\n<br>\n')
+
+        for userDict in users:
+            overviewFile.write('=======<br>\n' + userDict['Name'] + "<br>\n=======<br>\n")
+            overviewFile.write('Total    : ' + str(round((userDict['On-Peak'] + userDict['Off-Peak']) * scale, points)) + ' ' + scaleStr + '<br>\n')
+            overviewFile.write('On-Peak  : ' + str(round(userDict['On-Peak'] * scale, points)) + ' ' + scaleStr + '<br>\n')
+            overviewFile.write('Off-Peak : ' + str(round(userDict['Off-Peak'] * scale, points)) + ' ' + scaleStr + '<br>\n<br>\n')
+
+        overviewFile.write('</p>\n</body>\n</html>')
 
     overviewFile.close()
 
@@ -191,6 +228,8 @@ def loadDeviceCache(cacheFile):
     MAC Address, IP Address, Time, Total Bytes, Delta, On-Peak, Off-Peak
     """
 
+    print('[INFO] Loading device cache from {0}'.format(cacheFile))
+
     deviceStats = []
 
     if (os.path.isfile(cacheFile) == False):
@@ -214,8 +253,6 @@ def loadDeviceCache(cacheFile):
             deviceStats.append(tmpDevice)
 
     inputFile.close()
-
-    print('[INFO] Device cache has been loaded from "{0}"'.format(cacheFile))
 
     return deviceStats
 
@@ -251,11 +288,12 @@ def mergeDevices(oldDevices, newDevices):
 
             # CHANGED: Reset byte buffer when device has been removed from router
             add['Total Bytes'] = 0
-            print('=========================================================')
-            print('[WARN] Device was not found on router. Reset Total Bytes:')
-            print('---------------------------------------------------------')
+            add['Delta'] = 0
+            print('==================================================================')
+            print('[WARN] Device was not found on router. Reset Total Bytes and Delta:')
+            print('-----------------------------------------------------------------')
             print(add)
-            print('---------------------------------------------------------')
+            print('-----------------------------------------------------------------')
             print('')
 
         newDevices.append(add)
@@ -482,7 +520,7 @@ def logDeviceStats(statsDictArray, deviceDir):
 
 def getUserStats(deviceStatsArray, userMap):
     """ Go through the device dict array and add up all values
-    that beint to each user
+    that belong to each user
     """
 
     timeKey = int(time.time())
@@ -549,7 +587,7 @@ def logUserStats(userStatsArray, userDir):
     """
 
     if (not os.path.exists(userDir)):
-        os.mkdir(userDir)
+        os.makedirs(userDir)
 
     for user in userStatsArray:
         fileName = userDir + '/' + user['Name'] + '.csv'
@@ -598,7 +636,7 @@ def logTotalStats(totalStats, totalFile):
     """
 
     if (not os.path.exists(os.path.dirname(totalFile))):
-        os.mkdir(os.path.dirname(totalFile))
+        os.makedirs(os.path.dirname(totalFile))
 
     header = False
 
@@ -671,6 +709,8 @@ def loadUserMap(userMapFile):
     """
     MAC, User
     """
+    print('[INFO] Loading User-Map from ' + userMapFile)
+
     userMap = {}
 
     if (os.path.isfile(userMapFile) == False):
@@ -684,8 +724,6 @@ def loadUserMap(userMapFile):
             userMap[row[1]] = row[0]
 
     inputFile.close()
-
-    print('[INFO] User-Map has been loaded from "' + userMapFile + '"')
 
     return userMap
 
@@ -712,5 +750,176 @@ def logout(session):
             print('\t Another admin has logged in!')
         else:
             print('\t' + r.text)
+
+def getUserUsageToday_PLOT_OLD(userDir):
+    """
+    Load every user, but only add the values that fall within today
+
+    REQUIRES -l
+    REQUIRES intact .csv records for users
+    """
+
+    userArray = []
+
+    timeKey = time.time()
+    today = time.localtime(timeKey).tm_mday
+
+    if (not os.path.exists(userDir)):
+        return []
+
+    fileList = [f for f in listdir(userDir) if isfile(join(userDir, f))]
+
+    for userFile in fileList:
+        userName = userFile[:-4] # Trim .csv
+        tmpUser = {}
+        tmpUser['Name'] = userName
+        tmpUser['Total'] = 0
+        tmpUser['On-Peak'] = 0
+        tmpUser['Off-Peak'] = 0
+
+        # Collect today's records
+        with open(userDir + '/' + userFile, 'r') as csvfile:
+            inputFile = csv.reader(csvfile, delimiter=',', skipinitialspace=True)
+            inputFile.next()
+
+            for row in inputFile:
+                recordTimeKey = int(row[0])
+                recordDay = time.localtime(recordTimeKey).tm_mday
+
+                if (recordDay == today):
+                    tmpUser['Total'] = tmpUser['Total'] + int(row[3]) + int(row[4])
+                    tmpUser['On-Peak'] = tmpUser['On-Peak'] + int(row[3])
+                    tmpUser['Off-Peak'] = tmpUser['Off-Peak'] + int(row[4])
+
+        userArray.append(tmpUser)
+
+    return userArray
+
+def getTotalUsageToday(userUsageToday):
+    total = {}
+    total['On-Peak'] = 0
+    total['Off-Peak'] = 0
+
+    for u in userUsageToday:
+        total['On-Peak'] = total['On-Peak'] + u['On-Peak']
+        total['Off-Peak'] = total['Off-Peak'] + u['Off-Peak']
+
+    return total
+
+def loadUserUsageToday(userDir):
+    """
+    Last - First = Today
+
+    REQUIRES -l
+    REQUIRES intact .csv records for users
+    """
+
+    print('[INFO] Loading daily user usage from ' + userDir)
+
+    userArray = []
+
+    timeKey = time.time()
+    today = time.localtime(timeKey).tm_mday
+
+    if (not os.path.exists(userDir)):
+        return []
+
+    fileList = [f for f in listdir(userDir) if isfile(join(userDir, f))]
+
+    for userFile in fileList:
+        userName = userFile[:-4] # Trim .csv
+        tmpUser = {}
+        tmpUser['Name'] = userName
+        tmpUser['Total'] = 0
+        tmpUser['On-Peak'] = 0
+        tmpUser['Off-Peak'] = 0
+
+        # Collect today's records
+        with open(userDir + '/' + userFile, 'r') as csvfile:
+            foundFirst = False
+            foundLast = False
+            totalLines = 0
+
+            first = [0, 0, 0]
+            last = [0, 0, 0]
+
+            inputFile = csv.reader(csvfile, delimiter=',', skipinitialspace=True)
+            inputFile.next()
+
+            for row in inputFile:
+                recordTimeKey = int(row[0])
+                recordDay = time.localtime(recordTimeKey).tm_mday
+
+                if (recordDay == today and foundFirst == False):
+                    foundFirst = True
+                    first = [int(row[3]), int(row[4]), int(row[3]) + int(row[4])]
+
+
+                if (recordDay != today and foundFirst == True):
+                    foundLast = True
+                    last = [int(row[3]), int(row[4]), int(row[3]) + int(row[4])]
+                    break
+
+                last = [int(row[3]), int(row[4]), int(row[3]) + int(row[4])]
+
+            tmpUser['On-Peak'] = last[0] - first[0]
+            tmpUser['Off-Peak'] = last[1] - first[1]
+            tmpUser['Total'] = last[2] - first[2]
+
+        userArray.append(tmpUser)
+
+    return userArray
+
+def logUsageToday_OLD(userUsageToday, dailyUsageFile):
+    print('[DEBUG] Logging Usage for today')
+
+    if (not os.path.exists(os.path.dirname(dailyUsageFile))):
+        os.makedirs(os.path.dirname(dailyUsageFile))
+
+    total = {}
+    total['On-Peak'] = 0
+    total['Off-Peak'] = 0
+
+    for u in users:
+        total['On-Peak'] = total['On-Peak'] + u['On-Peak']
+        total['Off-Peak'] = total['Off-Peak'] + u['Off-Peak']
+
+    saveSummary(users, total, dailyUsageFile, 'html')
+
+def addDeltaToUserUsageToday(currentUsers, userUsageToday):
+    # print('[DEBUG] Adding delta to daily user usage records')
+
+    # Go through each new user record
+    for userDelta in currentUsers:
+
+        # search for matching device in old devices
+        found = False
+
+        for userToday in userUsageToday:
+
+            # look for match
+            if (userDelta['Name'] == userToday['Name']):
+                found = True
+                userToday['Time'] = userDelta['Time']
+                userToday['Delta'] = userDelta['Delta']
+
+                classifyDelta(userToday)
+
+        # No matching old dict was found
+        if (found == False):
+            print('---------------------------------------------')
+            print('[INFO] Adding new user to Daily Usage Records')
+
+            userToday = userDelta.copy()
+            classifyDelta(userToday)
+            userUsageToday.append(userToday)
+
+            print(userToday)
+
+            print('---------------------------------------------\n')
+
+
+
+    return userUsageToday
 
 main()
