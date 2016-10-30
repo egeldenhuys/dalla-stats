@@ -24,17 +24,19 @@ def main():
     parser.add_argument("-i", "--interval", type=int, default=60, help="the interval in seconds to update the statistics.")
     parser.add_argument("-d", "--root-directory", default='.', help="directory to save logs")
     parser.add_argument("-l", "--disable-logging", default=False, action='store_true', help="Disable logging of statistics")
+    parser.add_argument("-r", "--replot-users", default=False, action='store_true', help="Replot user logs")
     parser.add_argument('-v', '--version', action='version', version='%(prog)s ' + version)
 
     args = parser.parse_args()
 
-    if (args.username == '' or args.password == ''):
-        print('[ERROR] Please supply username and password')
-        exit()
+    if (not args.replot_users):
+        if (args.username == '' or args.password == ''):
+            print('[ERROR] Please supply username and password')
+            exit()
 
-    if (args.interval == 0):
-        print('[ERROR] Interval needs to be > 0')
-        exit()
+        if (args.interval == 0):
+            print('[ERROR] Interval needs to be > 0')
+            exit()
 
     rootDir = args.root_directory
 
@@ -59,6 +61,10 @@ def main():
 
     # Load cache and user map
     userMap = loadUserMap(dirStruct['userMapFile'])
+
+    if (args.replot_users):
+        replotUsers(userMap, dirStruct['deviceDir'], 'test')
+
     oldStats = loadDeviceCache(dirStruct['cacheFile'])
 
     userUsageToday = loadUserUsageToday(dirStruct['userDir'])
@@ -139,6 +145,121 @@ def main():
             print('\n[INFO] Exiting. Please wait...')
             time.sleep(1)
             abort = True
+
+def getString(intArray):
+
+    return str()
+def getNumbers(string):
+    new = string.split(',')
+
+    newInts = [int(new[0]), int(new[1]), int(new[2]), int(new[3]), int(new[4])]
+
+    return newInts
+
+def addToDict(userDict, timeKey, total, delta, on, off):
+    # Does record exist?
+
+    if (timeKey in userDict):
+
+
+def replotUsers(userMap, deviceDir, outputDir):
+    """
+
+    userMap:
+    mac - userName
+
+    userArray:
+    [userDict , ...]
+
+    userIndex:
+    Name - index
+    Index - Name
+
+    userDict:
+    timeKey - timeKey,Total,Delta,On,Off
+
+    Open each device
+    open the correspinding user from the userArray
+    load the first row from the device
+    add the entries to the userDict
+
+    do this for all device files
+
+    Write the uesrArray to log files
+
+    take first userDict in array
+    Output:
+    timeKey, TotalBytes = -1
+"""
+
+# Open each device log
+
+    userIndex = {}
+    userArray = []
+    userDict = {}
+    userName = 'Bob'
+
+    if (not os.path.exists(deviceDir)):
+        return []
+
+    fileList = [f for f in listdir(deviceDir) if isfile(join(deviceDir, f))]
+
+    for deviceFile in fileList:
+        userDict = {}
+
+        mac = getMacFromFileName(deviceFile)
+
+        # has mac been mapped?
+        if (mac in userMap):
+            # get userName
+            userName = userMap[mac]
+        else:
+            userName = 'UNKOWN'
+
+        # Does user exit?
+        if (userName in userIndex):
+            # get the dict pointer we will be working with
+            userDict = userArray[userIndex[userName]]
+        else:
+            # create a user
+            userIndex[userName] = len(userArray)
+            userIndex[len(userArray)] = userName
+
+            userDict = {}
+            userArray.append(userDict)
+
+        inputFile = open(deviceDir + '/' + deviceFile, 'r')
+        reader = csv.reader(inputFile, delimiter=',', skipinitialspace=True)
+        reader.next()
+
+
+        for row in reader:
+            # add row to userDict
+            timeKey = row[0]
+
+            if (timeKey in userDict):
+                userDict[timeKey + '_1'] += row[1]
+                userDict[timeKey + '_2'] += row[2]
+                userDict[timeKey + '_3'] += row[3]
+                userDict[timeKey + '_4'] += row[4]
+            else:
+                userDict[timeKey] = row[0]
+                userDict[timeKey + '_1'] = row[1]
+                userDict[timeKey + '_2'] = row[2]
+                userDict[timeKey + '_3'] = row[3]
+                userDict[timeKey + '_4'] = row[4]
+
+    # print userArray to files
+    for index in range(0, len(userArray)):
+        userName = userIndex[index]
+        userDict = userArray[index]
+        fileName = userName + '.csv'
+
+        outputFile = open(outputDir + '/' + fileName, 'w')
+
+        # TODO: Write the timeKeys and their data in chrono order
+        
+    print(userArray)
 
 def resetDevices(devicesArray):
     # Go through each device and set on and off peak counters to delta
