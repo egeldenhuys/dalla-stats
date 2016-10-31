@@ -2,6 +2,11 @@
 
 This project adheres to [Semantic Versioning](http://semver.org/).
 
+## v0.2.1
+
+### Added
+- Force log feature #50
+
 ## v0.2.0
 ### Added
 - Ability to output Delta per second to console/log file (Disabled) #31

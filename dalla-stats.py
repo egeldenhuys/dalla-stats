@@ -12,7 +12,7 @@ import sys
 import calendar
 
 
-version = 'v0.2.0'
+version = 'v0.2.1'
 
 def main():
 
@@ -72,6 +72,8 @@ def main():
 
     delta = []
     abort = False
+    specialEvents = {}
+    specialEvents['forceLog'] = False
 
     while (True):
         try:
@@ -86,17 +88,13 @@ def main():
 
             # Only do calculations and logging if we were able to get new stats
             if (len(deviceStats) != 0):
-                delta = calculateDeviceDeltas(oldStats, deviceStats)
+                delta = calculateDeviceDeltas(oldStats, deviceStats, specialEvents)
 
                 mergeDevices(oldStats, delta)
 
-                if (oldDay != day):
-                    print('[INFO] We have entered a new day! Resetting daily statistics...')
-                    oldDay = day
-
-                    tickOver(userUsageToday)
-
                 if (oldMonth != month):
+                    specialEvents['forceLog'] = True
+
                     print('[INFO] We have entered a new month! Resetting all statistics...')
                     year = time.localtime(timeKey).tm_year
                     oldMonth = month
@@ -121,12 +119,18 @@ def main():
                 else:
                     userUsageToday = addDeltaToUserUsageToday(userStats, userUsageToday)
 
-                #userUsageToday = addDeltaToUserUsageToday(userStats, userUsageToday)
+                if (oldDay != day):
+                    specialEvents['forceLog'] = True
+                    print('[INFO] We have entered a new day! Resetting daily statistics...')
+                    oldDay = day
+
+                    tickOver(userUsageToday)
 
                 calculateTotalUsageToday(userUsageToday)
                 sortUsers(userUsageToday)
 
-                if (timeKey - lastLog >= args.interval or abort == True):
+                if (timeKey - lastLog >= args.interval or abort == True or specialEvents['forceLog'] == True):
+                    specialEvents['forceLog'] = False
                     print('[INFO] Logging records @ ' + time.strftime('%c', time.localtime(timeKey)))
 
                     saveDeviceCache(delta, dirStruct['cacheFile'])
@@ -148,7 +152,6 @@ def main():
                 logout(session)
 
             if (abort == False):
-
                 time.sleep(pollInterval)
             else:
                 break
@@ -494,7 +497,7 @@ def classifyDelta(deviceDict):
     else:
         deviceDict['On-Peak'] = deviceDict['On-Peak'] + deviceDict['Delta']
 
-def calculateDeviceDeltas(oldDeviceDeltas, currentDeviceRecords):
+def calculateDeviceDeltas(oldDeviceDeltas, currentDeviceRecords, specialEvents={}):
 
     localCurrent = currentDeviceRecords
 
@@ -522,6 +525,7 @@ def calculateDeviceDeltas(oldDeviceDeltas, currentDeviceRecords):
                     newDeviceDict['Delta'] = newDeviceDict['Total Bytes'] - oldDeviceDict['Total Bytes']
 
                     if (newDeviceDict['Delta'] < 0):
+                        specialEvents['forceLog'] = True
                         print('=================================')
                         print('[WARN] Device has negative delta!')
                         print('Delta = ' + str(newDeviceDict['Delta']))
