@@ -11,7 +11,8 @@ import logging
 import sys
 import calendar
 
-version = 'v0.1.2+dev.1'
+
+version = 'v0.2.0'
 
 def main():
 
@@ -21,12 +22,16 @@ def main():
 
     parser.add_argument("-u", "--username", default='', help="the router admin username")
     parser.add_argument("-p", "--password", default='', help="the router admin password")
-    parser.add_argument("-i", "--interval", type=int, default=60, help="the interval in seconds to update the statistics.")
+    parser.add_argument("-i", "--interval", type=int, default=60, help="the interval in seconds to update the log files")
+    parser.add_argument("--poll-interval", type=int, default=1, help="the interval in seconds to update the statistics")
     parser.add_argument("-d", "--root-directory", default='.', help="directory to save logs")
     parser.add_argument("-l", "--disable-logging", default=False, action='store_true', help="Disable logging of statistics")
     parser.add_argument('-v', '--version', action='version', version='%(prog)s ' + version)
 
     args = parser.parse_args()
+
+    pollInterval = args.poll_interval
+    lastLog = 0
 
     if (args.username == '' or args.password == ''):
         print('[ERROR] Please supply username and password')
@@ -75,10 +80,11 @@ def main():
             month = localTime.tm_mon
             day = localTime.tm_mday
 
-            print('[INFO] Getting device records @ ' + str(timeKey))
+            #print('[INFO] Getting device records @ ' + str(timeKey))
 
             deviceStats = getDeviceRecords(session, timeKey)
 
+            # Only do calculations and logging if we were able to get new stats
             if (len(deviceStats) != 0):
                 delta = calculateDeviceDeltas(oldStats, deviceStats)
 
@@ -88,7 +94,7 @@ def main():
                     print('[INFO] We have entered a new day! Resetting daily statistics...')
                     oldDay = day
 
-                    resetDevices(userUsageToday)
+                    tickOver(userUsageToday)
 
                 if (oldMonth != month):
                     print('[INFO] We have entered a new month! Resetting all statistics...')
@@ -98,40 +104,52 @@ def main():
                     dateKey = str(year) + '-' + str(month)
                     dirStruct = getDirStructure(rootDir, dateKey)
 
-                    resetDevices(delta)
-
-                saveDeviceCache(delta, dirStruct['cacheFile'])
+                    tickOver(delta)
 
                 userStats = getUserStats(delta, userMap, timeKey)
                 sortUsers(userStats)
 
-                saveSummary(userStats, dirStruct['summaryFile'], 'html', 'Total')
-
-                if (args.disable_logging == False):
-                    logDeviceStats(delta, dirStruct['deviceDir'])
-                    logUserStats(userStats, dirStruct['userDir'])
+                # NOTE: Disabled here, Nobody will see the server console
+                # if (userStats[0]['Name'] == "TOTAL"):
+                #     print('Delta = {0} KiB/s'.format(userStats[0]['Delta'] / 1024))
 
                 # First run, we cannot safely say how much users have used today.
                 # So set their usage to 0
                 if (len(userUsageToday) == 0):
-                    resetDevices(userStats)
-                    userUsageToday = loadUserUsageToday(dirStruct['userDir'])
+                    userUsageToday = addDeltaToUserUsageToday(userStats, userUsageToday)
+                    resetRecords(userUsageToday)
                 else:
                     userUsageToday = addDeltaToUserUsageToday(userStats, userUsageToday)
 
+                #userUsageToday = addDeltaToUserUsageToday(userStats, userUsageToday)
+
                 calculateTotalUsageToday(userUsageToday)
                 sortUsers(userUsageToday)
-                saveSummary(userUsageToday, dirStruct['todayFile'], 'html', 'Today')
+
+                if (timeKey - lastLog >= args.interval or abort == True):
+                    print('[INFO] Logging records @ ' + time.strftime('%c', time.localtime(timeKey)))
+
+                    saveDeviceCache(delta, dirStruct['cacheFile'])
+                    saveSummary(userStats, dirStruct['summaryFile'], 'html', 'Total')
+                    saveSummary(userUsageToday, dirStruct['todayFile'], 'html', 'Today')
+
+                    if (args.disable_logging == False):
+                        logDeviceStats(delta, dirStruct['deviceDir'])
+                        logUserStats(userStats, dirStruct['userDir'])
+
+                    lastLog = timeKey
 
                 oldStats = delta
 
             else:
+                print('[ERROR] Failed to get device records from router.')
                 # Getting records fail, try to logout
                 # REVIEW: Does this work when timout occurs
                 logout(session)
 
             if (abort == False):
-                time.sleep(args.interval)
+
+                time.sleep(pollInterval)
             else:
                 break
 
@@ -140,8 +158,18 @@ def main():
             time.sleep(1)
             abort = True
 
-def resetDevices(devicesArray):
+def resetRecords(devicesArray):
+
+    for device in devicesArray:
+        device['On-Peak'] = 0
+        device['Off-Peak'] = 0
+        device['Delta'] = 0
+
+def tickOver(devicesArray):
     # Go through each device and set on and off peak counters to delta
+    # Used when entering a new month and we want to forget previous On and Off peak
+    # also used for enterting a new day
+    # DELTA is the data in the new day/month that needs to be classified
 
     for device in devicesArray:
         device['On-Peak'] = 0
