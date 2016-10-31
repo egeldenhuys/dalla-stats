@@ -2,8 +2,24 @@
 
 This project adheres to [Semantic Versioning](http://semver.org/).
 
-## Unreleased
+## v0.2.0
+### Added
+- Ability to output Delta per second to console/log file (Disabled) #31
+- Summary is now ranked from highest to lowest total usage #46
+- Percentage of data used is now displayed next to each user #35
 
+### Changed
+- Now polls for new records every 1 second (better accuracy of records), and write logs at --interval seconds #38
+- If the log and poll interval are not the same, then the Delta in the log files
+is no longer accurate and should not be sued for calculations
+- Human readable timestamp when logging the get records function
+- TOTAL is now a user #23
+- User 'Unkown' has been renamed to 'UNKNOWN'. File needs to be renamed as well!
+
+### Fixed
+- Daily stats now start at 0 if it is the first run
+
+## v0.1.2+dev.1
 ### Added
 - Summary is now ranked from highest to lowest total usage #46
 - Percentage of data used is now displayed next to each user #35
