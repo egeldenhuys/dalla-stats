@@ -12,7 +12,7 @@ import sys
 import calendar
 
 
-version = 'v0.2.1'
+version = 'v0.2.2'
 
 def main():
 
@@ -75,12 +75,14 @@ def main():
     specialEvents = {}
     specialEvents['forceLog'] = False
 
+    counter = 1
+
     while (True):
         try:
             timeKey = int(time.time())
             localTime = time.localtime(timeKey)
-            month = localTime.tm_mon
-            day = localTime.tm_mday
+            #month = localTime.tm_mon
+            #day = localTime.tm_mday
 
             #print('[INFO] Getting device records @ ' + str(timeKey))
 
@@ -150,6 +152,13 @@ def main():
                 # Getting records fail, try to logout
                 # REVIEW: Does this work when timout occurs
                 logout(session)
+
+            if (counter == 5):
+                counter = 0
+                day+=1
+                month+=1
+            else:
+                counter+=1
 
             if (abort == False):
                 time.sleep(pollInterval)
@@ -323,7 +332,7 @@ def loadDeviceCache(cacheFile):
 
             tmpDevice['MAC Address'] = row[0]
             tmpDevice['IP Address'] = row[1]
-            tmpDevice['Time'] = row[2]
+            tmpDevice['Time'] = int(row[2])
             tmpDevice['Total Bytes'] = int(row[3])
             tmpDevice['Delta'] = int(row[4])
             tmpDevice['On-Peak'] = int(row[5])

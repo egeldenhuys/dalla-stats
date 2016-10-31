@@ -2,10 +2,13 @@
 
 This project adheres to [Semantic Versioning](http://semver.org/).
 
-## v0.2.1
+## v0.2.2
+### Fixed
+- Fix crash when new day starts #51
 
+## v0.2.1
 ### Added
-- Force log feature #50
+- Force logging when new day starts #50
 
 ## v0.2.0
 ### Added
