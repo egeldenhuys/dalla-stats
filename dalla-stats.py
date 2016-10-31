@@ -12,7 +12,7 @@ import sys
 import calendar
 
 
-version = 'v0.2.0'
+version = 'v0.2.1'
 
 def main():
 

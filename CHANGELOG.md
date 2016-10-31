@@ -2,7 +2,7 @@
 
 This project adheres to [Semantic Versioning](http://semver.org/).
 
-## Unreleased
+## v0.2.1
 
 ### Added
 - Force log feature #50
