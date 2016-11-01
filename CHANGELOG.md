@@ -2,7 +2,12 @@
 
 This project adheres to [Semantic Versioning](http://semver.org/).
 
-## v0.2.2
+## Unreleased
+
+### Fixed
+- Removed testing code breaking normal functionality
+
+## v0.2.2 [YANKED]
 ### Fixed
 - Fix crash when new day starts #51
 
