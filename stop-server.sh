@@ -18,6 +18,8 @@ if [ ! -f dalla-stats.pid ]; then
 else
 	dallaPID=$(cat dalla-stats.pid)
 	echo Killing dalla-stats daemon with PID $dallaPID
+	kill -2 $dallaPID
+	sleep 5
 	kill -9 $dallaPID
 	rm dalla-stats.pid
 fi
