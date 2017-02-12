@@ -1,0 +1,6 @@
+# Server files
+password_file
+*.pid
+*.log
+logs/
+user-map.csv
