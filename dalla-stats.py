@@ -157,7 +157,8 @@ def main():
             else:
                 break
 
-        except KeyboardInterrupt:
+        except (KeyboardInterrupt, SystemExit) as e:
+            print(e)
             print('\n[INFO] Exiting. Please wait...')
             time.sleep(1)
             abort = True
