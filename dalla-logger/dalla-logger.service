@@ -1,0 +1,13 @@
+[Unit]
+Description=Dalla Data Logger
+
+[Service]
+Type=forking
+ExecStart=/usr/lib/dalla-stats/logger/start-server.sh
+ExecStop=/usr/lib/dalla-stats/logger/stop-server.sh
+PIDFile=/var/run/dalla-logger.pid
+Restart=always
+RestartSec=120
+
+[Install]
+WantedBy=multi-user.target

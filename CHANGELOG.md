@@ -3,6 +3,7 @@
 This project adheres to [Semantic Versioning](http://semver.org/).
 
 ## Unreleased
+- Create simple logger from dalla-stats.py
 
 ## [0.2.3] - 2016-11-01
 ### Fixed
